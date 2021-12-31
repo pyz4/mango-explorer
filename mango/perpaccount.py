@@ -84,6 +84,7 @@ class PerpAccount:
 
     def asset_value(self, perp_market_cache: PerpMarketCache, price: Decimal) -> Decimal:
         value: Decimal = Decimal(0)
+
         if self.base_position > 0:
             value = self.base_position * self.lot_size_converter.base_lot_size * price
 
@@ -101,7 +102,8 @@ class PerpAccount:
     def liability_value(self, perp_market_cache: PerpMarketCache, price: Decimal) -> Decimal:
         value: Decimal = Decimal(0)
         if self.base_position < 0:
-            value = self.base_position * self.lot_size_converter.base_lot_size * price
+            # TODO: TEMPORARY FIX to decimal places being off
+            value = self.base_position / Decimal(100) * self.lot_size_converter.base_lot_size * price
 
         quote_position: Decimal = self.quote_position
         if self.base_position > 0:

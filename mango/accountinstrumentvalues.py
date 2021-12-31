@@ -163,13 +163,15 @@ class PricedAccountInstrumentValues(AccountInstrumentValues):
             original_account_token_values.base_token, original_account_token_values.quote_token)
 
         if market_cache.root_bank is None:
-            raise Exception(f"No root bank for token {original_account_token_values.base_token} in {market_cache}")
+            null_root_bank = RootBankCache(Decimal(1), Decimal(1), datetime.now())
+            market_cache.root_bank = null_root_bank
+            # raise Exception(f"No root bank for token {original_account_token_values.base_token} in {market_cache}")
 
-        deposit_value: Decimal = original_account_token_values.raw_deposit * market_cache.root_bank.deposit_index * price.value
+        deposit_value: Decimal = original_account_token_values.raw_deposit * market_cache.root_bank.deposit_index * market_cache.price.price
         shifted_deposit_value: Decimal = original_account_token_values.quote_token.shift_to_decimals(deposit_value)
         deposit: InstrumentValue = InstrumentValue(original_account_token_values.quote_token, shifted_deposit_value)
 
-        borrow_value: Decimal = original_account_token_values.raw_borrow * market_cache.root_bank.borrow_index * price.value
+        borrow_value: Decimal = original_account_token_values.raw_borrow * market_cache.root_bank.borrow_index * market_cache.price.price
         shifted_borrow_value: Decimal = original_account_token_values.quote_token.shift_to_decimals(borrow_value)
         borrow: InstrumentValue = InstrumentValue(original_account_token_values.quote_token, shifted_borrow_value)
 

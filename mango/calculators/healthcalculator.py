@@ -103,6 +103,36 @@ class HealthCalculator:
             full_quote_position = quote_position + takerQuote + (asks_quantity * token_price.value)
             return if_all_asks_executed, full_quote_position
 
+
+    def _get_priced_account_instrument(self, asset, open_orders_by_address, group, cache):
+        # getting priced instrument values from account
+        report: AccountInstrumentValues = AccountInstrumentValues.from_account_basket_base_token(asset, open_orders_by_address, group)
+        market_cache: MarketCache = group.market_cache_from_cache(cache, report.base_token)
+        priced_report: PricedAccountInstrumentValues = report.priced(market_cache)
+        return priced_report
+
+    def calculate_assets_liabs(self, account: Account, open_orders_by_address: typing.Dict[str, OpenOrders], group: Group, cache: Cache) -> Decimal:
+
+        priced_reports = [(asset, self._get_priced_account_instrument(asset, open_orders_by_address, group, cache)) for asset in account.base_slots]
+        assets_spot, liabs_spot = map(sum, zip(*[(report.deposit.value, report.borrow.value) for _, report in priced_reports]))
+        assets_perp, liabs_perp = zip(*[(asset.perp_account.asset_value(report.perp_market_cache, report.price.value), asset.perp_account.liability_value(report.perp_market_cache, report.price.value)) for asset, report in priced_reports])
+        # import pdb; pdb.set_trace()
+        # liabs_perp, assets_perp = zip(*[report.if_worst_execution() for report in priced_reports])
+
+        assets_perp = sum([perp for perp in assets_perp])
+        liabs_perp = sum([perp for perp in liabs_perp]) # somehow the USDC pricing is off
+
+        assets = assets_spot + abs(assets_perp)
+        liabs = liabs_spot + abs(liabs_perp)
+
+        # add in quote token assets and liabs
+        assets += account.shared_quote.deposit.value
+        liabs += account.shared_quote.borrow.value
+
+        # return liabs / (assets - liabs)
+        return assets, liabs
+        
+
     def calculate(self, account: Account, open_orders_by_address: typing.Dict[str, OpenOrders], group: Group, cache: Cache) -> Decimal:
         priced_reports: typing.List[PricedAccountInstrumentValues] = []
         for asset in account.base_slots:
@@ -147,20 +177,20 @@ class HealthCalculator:
                                                                         Decimal(0), Decimal(0),
                                                                         NullLotSizeConverter())
         # print("quote_report", quote_report)
-
         health: Decimal = quote_report.net_value.value
         # print("Health (start)", health)
         for priced_report in priced_reports:
             slot: GroupSlot = group.slot_by_instrument(priced_report.base_token)
             spot_market: typing.Optional[GroupSlotSpotMarket] = slot.spot_market
-            if spot_market is None:
-                raise Exception(f"Could not find market for spot token {priced_report.base_token.symbol}.")
+            if spot_market is not None:
+                # raise Exception(f"Could not find market for spot token {priced_report.base_token.symbol}.")
+                base_value, quote_value = self._calculate_pessimistic_spot_value(priced_report)
 
-            base_value, quote_value = self._calculate_pessimistic_spot_value(priced_report)
-
-            spot_weight = spot_market.init_asset_weight if base_value > 0 else spot_market.init_liab_weight
-            spot_health = base_value.value * spot_weight
-            # print("Weights", base_value.value, "*", spot_weight, spot_health)
+                spot_weight = spot_market.init_asset_weight if base_value > 0 else spot_market.init_liab_weight
+                spot_health = base_value.value * spot_weight
+            else:
+                spot_health = 0
+                # print("Weights", base_value.value, "*", spot_weight, spot_health)
 
             perp_base, perp_quote = priced_report.if_worst_execution()
             perp_market: typing.Optional[GroupSlotPerpMarket] = slot.perp_market
@@ -172,12 +202,8 @@ class HealthCalculator:
             health += spot_health
             health += perp_health
             health += quote_value.value
-            health += perp_quote.value
-            health += priced_report.raw_perp_quote_position
-        #     print("Health (now)", health, spot_health, perp_health, quote_value.value,
-        #           perp_quote.value, priced_report.raw_perp_quote_position)
-
-        # print("Health (returning)", health)
+            # health += perp_quote.value
+            health += priced_report.raw_perp_quote_position # not sure why this is added, causes the numbers to be way off
 
         return health
 
