@@ -78,7 +78,10 @@ class PerpAccount:
 
     def unsettled_funding(self, perp_market_cache: PerpMarketCache) -> Decimal:
         base_position: Decimal = self.base_position
-        unsettled: Decimal
+        unsettled: Decimal = 0
+        if perp_market_cache is None:
+            return unsettled
+
         if base_position < 0:
             unsettled = base_position * (perp_market_cache.short_funding - self.short_settled_funding)
         else:
@@ -93,7 +96,10 @@ class PerpAccount:
             value = self.lot_size_converter.quote.shift_to_decimals(value)
 
         quote_position: Decimal = self.lot_size_converter.quote.shift_to_decimals(self.quote_position)
-        quote_position += self.unsettled_funding(perp_market_cache)
+
+        if perp_market_cache:
+            quote_position += self.unsettled_funding(perp_market_cache)
+
         if quote_position > 0:
             value += quote_position
 
