@@ -78,7 +78,7 @@ class PerpAccount:
 
     def unsettled_funding(self, perp_market_cache: PerpMarketCache) -> Decimal:
         base_position: Decimal = self.base_position
-        unsettled: Decimal = 0
+        unsettled: Decimal = Decimal(0)
         if perp_market_cache is None:
             return unsettled
 
@@ -91,6 +91,7 @@ class PerpAccount:
     def asset_value(self, perp_market_cache: PerpMarketCache, price: Decimal) -> Decimal:
         base_position: Decimal = self.lot_size_converter.adjust_to_quote_decimals(self.base_position)
         value: Decimal = Decimal(0)
+
         if base_position > 0:
             value = base_position * self.lot_size_converter.base_lot_size * price
             value = self.lot_size_converter.quote.shift_to_decimals(value)
