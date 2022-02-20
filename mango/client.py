@@ -275,7 +275,7 @@ class SlotHolder:
             self.__latest_slot = latest + 1
             self._logger.debug(f"Requiring data from slot {self.latest_slot} onwards now.")
 
-    def is_acceptable(self, slot_to_check: int, within: int=10) -> bool:
+    def is_acceptable(self, slot_to_check: int, within: int=5) -> bool:
 
         if slot_to_check >= self.__latest_slot:
             self.__latest_slot = slot_to_check
