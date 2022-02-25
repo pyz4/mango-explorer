@@ -32,8 +32,15 @@ class OrderReconciler(metaclass=abc.ABCMeta):
         self._logger: logging.Logger = logging.getLogger(self.__class__.__name__)
 
     @abc.abstractmethod
-    def reconcile(self, model_state: ModelState, existing_orders: typing.Sequence[mango.Order], desired_orders: typing.Sequence[mango.Order]) -> ReconciledOrders:
-        raise NotImplementedError("OrderReconciler.reconcile() is not implemented on the base type.")
+    def reconcile(
+        self,
+        model_state: ModelState,
+        existing_orders: typing.Sequence[mango.Order],
+        desired_orders: typing.Sequence[mango.Order],
+    ) -> ReconciledOrders:
+        raise NotImplementedError(
+            "OrderReconciler.reconcile() is not implemented on the base type."
+        )
 
     def __str__(self) -> str:
         return """« OrderReconciler »"""
@@ -50,7 +57,12 @@ class NullOrderReconciler(OrderReconciler):
     def __init__(self) -> None:
         super().__init__()
 
-    def reconcile(self, _: ModelState, existing_orders: typing.Sequence[mango.Order], desired_orders: typing.Sequence[mango.Order]) -> ReconciledOrders:
+    def reconcile(
+        self,
+        _: ModelState,
+        existing_orders: typing.Sequence[mango.Order],
+        desired_orders: typing.Sequence[mango.Order],
+    ) -> ReconciledOrders:
         outcomes: ReconciledOrders = ReconciledOrders()
         outcomes.to_keep = list(existing_orders)
         outcomes.to_ignore = list(desired_orders)
@@ -58,3 +70,26 @@ class NullOrderReconciler(OrderReconciler):
 
     def __str__(self) -> str:
         return """« NullOrderReconciler »"""
+
+
+# # 🥭 AlwaysReplaceOrderReconciler class
+#
+# Implementation of OrderReconciler that never keeps orders, just always cancels and replaces.
+#
+class AlwaysReplaceOrderReconciler(OrderReconciler):
+    def __init__(self) -> None:
+        super().__init__()
+
+    def reconcile(
+        self,
+        _: ModelState,
+        existing_orders: typing.Sequence[mango.Order],
+        desired_orders: typing.Sequence[mango.Order],
+    ) -> ReconciledOrders:
+        outcomes: ReconciledOrders = ReconciledOrders()
+        outcomes.to_cancel = list(existing_orders)
+        outcomes.to_place = list(desired_orders)
+        return outcomes
+
+    def __str__(self) -> str:
+        return """« AlwaysReplaceOrderReconciler »"""

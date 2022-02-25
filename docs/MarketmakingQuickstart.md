@@ -146,29 +146,15 @@ It’s probably a good idea to put this alias in your `.profile` or `.bashrc` (o
 
 Run the following command to create your wallet:
 ```
-# mango-explorer solana-keygen new --force --outfile /app/id.json
+# mango-explorer generate-keypair --filename /app/id.json --overwrite
 ```
 (/app/id.json is not a typo in the command - it’s the path to the ID file in the docker container’s context - it’s mapped to the ~/mango-explorer/id.json file.)
 
-This will ask you for a passphrase to protect your wallet - just press ENTER for no passphrase (`mango-explorer` assumes no passphrase on key files).
-
 The output will be something like the following:
 ```
-Generating a new keypair
-
-For added security, enter a BIP39 passphrase
-
-NOTE! This passphrase improves security of the recovery seed phrase NOT the
-keypair file itself, which is stored as insecure plain text
-
-BIP39 Passphrase (empty for none):
-
 Wrote new keypair to /app/id.json
 ==================================================================================
 pubkey: 6MEVCr816wapduGknarkNRwMFWvFQSNv5h7iQEGGx8uB
-==================================================================================
-Save this seed phrase and your BIP39 passphrase to recover your new keypair:
-finger embrace similar anger type laptop public romance then elevator build border
 ==================================================================================
 ```
 This is what a successful run of the command looks like. It creates a Solana wallet and writes its secret key to ~/mango-explorer/id.json. **Looking after this file is entirely your responsibility. If you lose this file, you lose the private key for all the funds in the wallet. If you give it to someone else you give them the entire contents of your wallet.** This is not a big deal on devnet but it’s very important on mainnet.
@@ -211,16 +197,17 @@ SOL tokens are needed for running operations on the Solana blockchain, similar t
 
 To do this, run the command:
 ```
-# mango-explorer solana airdrop 1 6MEVCr816wapduGknarkNRwMFWvFQSNv5h7iQEGGx8uB --url devnet
+# mango-explorer airdrop --symbol SOL --quantity 1 --url devnet
 ```
-This will transfer 1 SOL to **6MEVCr816wapduGknarkNRwMFWvFQSNv5h7iQEGGx8uB**, the address shown above when creating the wallet. You should substitute the public key of the account you created. (You can run this command again and again to get more devnet SOL, should you ever need it.) You should see output like:
-```
-Requesting airdrop of 1 SOL
+This will transfer 1 SOL to **6MEVCr816wapduGknarkNRwMFWvFQSNv5h7iQEGGx8uB**, the address shown above when creating the wallet.
 
-Signature: 3sGEkKZ3L1WUdXbFgpB1KtrKAHunrHSomfEFaFVyJiQYxCRRgEqnSJWbLFcgEbaWQ7VtB52GNvVxbW73KdFZxAwu
-
-1 SOL
+You should see output like:
 ```
+Airdropping 1 SOL to 6MEVCr816wapduGknarkNRwMFWvFQSNv5h7iQEGGx8uB
+Transaction IDs: ['4FJGNLu1SuE2tXPgykjoGE1Pi5SWAkveMgLCJTmw7FJwwFwhyE9BA12xAcAkLt41nECcxytocMR67zZU4A3awurR']
+```
+
+Airdrops of devnet SOL are limited. Requesting more than 1 SOL is (currently) likely to fail but you can run this command again later to get more devnet SOL should you need it. 
 
 When the transfer completes (it’s very fast!) it appears in the wallet and you can check that using the `show-account-balances` command:
 ```
@@ -503,12 +490,13 @@ Here are some parameters that are commonly passed to the `marketmaker`.
 
 - `--group` The name of the Mango Group you want to use. (Optional - will use the default group in the `ids.json` file in the container if none is specified.)
 
-- `--market` The name of the market you want to use. (Required. Much be an exact match for one of the markets in the configured group in the `ids.json` file in the container.)
+- `--market` The name of the market you want to use. (Required. Must be an exact match for one of the markets in the configured group in the `ids.json` file in the container.)
 
 - `--oracle-provider` **** You can pick the oracle to use for price information. Pyth is a common choice because the other options don’t provide a ‘confidence value’. Options are:
     - pyth
-    - serum
+    - market
     - ftx
+    - stub
 
 - `--confidenceinterval-level` A weighting to apply to the confidence interval from the oracle: e.g. 1 - use the oracle confidence interval as the spread, 2 (risk averse, default) - multiply the oracle confidence interval by 2 to get the spread, 0.5 (aggressive) halve the oracle confidence interval to get the spread.
 

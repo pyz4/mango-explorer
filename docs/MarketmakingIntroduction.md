@@ -25,7 +25,7 @@ while :
 do
     cancel-my-orders --name "WSMM ${MARKET} (cancel)" --market $MARKET --log-level ERROR
 
-    CURRENT_PRICE=$(fetch-price --provider serum --symbol $ORACLE_MARKET --log-level ERROR --cluster-name mainnet | cut -d"'" -f 2 | sed 's/,//')
+    CURRENT_PRICE=$(show-price --provider serum --market $ORACLE_MARKET --log-level ERROR --cluster-name mainnet | cut -d"'" -f 2 | sed 's/,//')
     place-order --name "WSMM ${MARKET} (buy)" --market $MARKET --order-type LIMIT \
         --log-level ERROR --side BUY --quantity $FIXED_POSITION_SIZE --price $(echo "$CURRENT_PRICE - $FIXED_SPREAD" | bc)
     place-order --name "WSMM ${MARKET} (sell)" --market $MARKET --order-type LIMIT \
@@ -43,7 +43,7 @@ mango-explorer worlds-simplest-market-maker ETH-PERP 1 10 30
 ```
 That’s not bad for 21 lines of `bash` scripting! OK, the price-fetching is a bit contorted, but you can see it’s calling:
 * `cancel-my-orders`
-* `fetch-price`
+* `show-price`
 * `place-order` (BUY)
 * `place-order` (SELL)
 * `sleep`
@@ -67,7 +67,7 @@ try:
     bid, ask = self.calculate_order_prices(price)
     buy_quantity, sell_quantity = self.calculate_order_quantities(price, inventory)
 
-    current_orders = self.market_operations.load_my_orders()
+    current_orders = self.market_operations.load_my_orders(include_expired=True)
     buy_orders = [order for order in current_orders if order.side == mango.Side.BUY]
     if self.orders_require_action(buy_orders, bid, buy_quantity):
         self._logger.info("Cancelling BUY orders.")

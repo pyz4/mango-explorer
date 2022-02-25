@@ -35,15 +35,19 @@ class InstructionReporter:
         return True
 
     def report(self, instruction: TransactionInstruction) -> str:
-        report: typing.List[str] = []
+        instruction_data = "".join("{:02x}".format(x) for x in instruction.data)
+        keys: typing.List[str] = []
         for index, key in enumerate(instruction.keys):
             is_writable: str = "Writable " if key.is_writable else "Read-Only"
             is_signer: str = "Signer" if key.is_signer else "      "
             pubkey: str = str(key.pubkey)
-            report += [f"Key[{index: >2}]: {pubkey: <45} {is_writable} {is_signer}"]
-        report += [f"Program ID: {instruction.program_id}"]
-        report += ["Data: " + "".join("{:02x}".format(x) for x in instruction.data)]
-        return "\n".join(report)
+            keys += [f"    Key[{index: >2}]: {pubkey: <45} {is_writable} {is_signer}"]
+        key_details: str = "\n".join(keys)
+        return f"""« Unknown Instruction:
+    Program ID: {instruction.program_id}
+    Data: {instruction_data}
+{key_details}
+»"""
 
 
 # # 🥭 SerumInstructionReporter class
@@ -61,7 +65,20 @@ class SerumInstructionReporter(InstructionReporter):
     def report(self, instruction: TransactionInstruction) -> str:
         initial = layouts.SERUM_INSTRUCTION_VARIANT_FINDER.parse(instruction.data)
         instruction_type = PySerumInstructionType(initial.variant)
-        return f"« Serum Instruction: {instruction_type.name}: " + "".join("{:02x}".format(x) for x in instruction.data) + "»"
+        instruction_data = "".join("{:02x}".format(x) for x in instruction.data)
+        data = "".join("{:02x}".format(x) for x in instruction.data)
+        keys: typing.List[str] = []
+        for index, key in enumerate(instruction.keys):
+            is_writable: str = "Writable " if key.is_writable else "Read-Only"
+            is_signer: str = "Signer" if key.is_signer else "      "
+            pubkey: str = str(key.pubkey)
+            keys += [f"    Key[{index: >2}]: {pubkey: <45} {is_writable} {is_signer}"]
+        key_details: str = "\n".join(keys)
+        return f"""« Serum Instruction: {instruction_type.name}: {data}
+    Program ID: {instruction.program_id}
+    Data: {instruction_data}
+{key_details}
+»"""
 
 
 # # 🥭 MangoInstructionReporter class
@@ -81,14 +98,20 @@ class MangoInstructionReporter(InstructionReporter):
         parser = layouts.InstructionParsersByVariant[initial.variant]
         if parser is None:
             raise Exception(
-                f"Could not find instruction parser for variant {initial.variant} / {InstructionType(initial.variant)}.")
+                f"Could not find instruction parser for variant {initial.variant} / {InstructionType(initial.variant)}."
+            )
 
-        accounts: typing.List[PublicKey] = list(map(lambda meta: meta.pubkey, instruction.keys))
+        accounts: typing.List[PublicKey] = list(
+            map(lambda meta: meta.pubkey, instruction.keys)
+        )
         parsed = parser.parse(instruction.data)
         instruction_type = InstructionType(int(parsed.variant))
 
-        details = super().report(instruction)
-        return str(MangoInstruction(instruction_type, parsed, accounts)) + "\nInstruction Details:\n" + details
+        mango_instruction = MangoInstruction(
+            instruction.program_id, instruction_type, instruction.data, parsed, accounts
+        )
+
+        return f"{mango_instruction}"
 
 
 # # 🥭 CompoundInstructionReporter class
@@ -111,10 +134,13 @@ class CompoundInstructionReporter(InstructionReporter):
             if reporter.matches(instruction):
                 return reporter.report(instruction)
         raise Exception(
-            f"Could not find instruction reporter for instruction {instruction}.")
+            f"Could not find instruction reporter for instruction {instruction}."
+        )
 
     @staticmethod
-    def from_addresses(mango_program_address: PublicKey, serum_program_address: PublicKey) -> InstructionReporter:
+    def from_addresses(
+        mango_program_address: PublicKey, serum_program_address: PublicKey
+    ) -> InstructionReporter:
         base: InstructionReporter = InstructionReporter()
         serum: InstructionReporter = SerumInstructionReporter(serum_program_address)
         mango: InstructionReporter = MangoInstructionReporter(mango_program_address)

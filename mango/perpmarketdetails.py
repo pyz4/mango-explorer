@@ -15,26 +15,34 @@
 
 import typing
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from decimal import Decimal
 from solana.publickey import PublicKey
 
 from .accountinfo import AccountInfo
 from .addressableaccount import AddressableAccount
 from .context import Context
+from .datetimes import utc_now
 from .group import GroupSlot, Group
 from .instrumentvalue import InstrumentValue
 from .layouts import layouts
 from .metadata import Metadata
-from .token import Instrument, Token
+from .tokens import Instrument, Token
 from .tokenbank import TokenBank
 from .version import Version
 
 
 class LiquidityMiningInfo:
-    def __init__(self, version: Version, rate: Decimal, max_depth_bps: Decimal, period_start: datetime,
-                 target_period_length: timedelta, mngo_left: InstrumentValue,
-                 mngo_per_period: InstrumentValue) -> None:
+    def __init__(
+        self,
+        version: Version,
+        rate: Decimal,
+        max_depth_bps: Decimal,
+        period_start: datetime,
+        target_period_length: timedelta,
+        mngo_left: InstrumentValue,
+        mngo_per_period: InstrumentValue,
+    ) -> None:
         self.version: Version = version
 
         self.rate: Decimal = rate
@@ -45,16 +53,31 @@ class LiquidityMiningInfo:
         self.mngo_per_period: InstrumentValue = mngo_per_period
 
     @staticmethod
-    def from_layout(layout: typing.Any, version: Version, mngo: Token) -> "LiquidityMiningInfo":
+    def from_layout(
+        layout: typing.Any, version: Version, mngo: Token
+    ) -> "LiquidityMiningInfo":
         rate: Decimal = layout.rate
         max_depth_bps: Decimal = layout.max_depth_bps
         period_start: datetime = layout.period_start
-        target_period_length: timedelta = timedelta(seconds=float(layout.target_period_length))
-        mngo_left: InstrumentValue = InstrumentValue(mngo, mngo.shift_to_decimals(layout.mngo_left))
-        mngo_per_period: InstrumentValue = InstrumentValue(mngo, mngo.shift_to_decimals(layout.mngo_per_period))
+        target_period_length: timedelta = timedelta(
+            seconds=float(layout.target_period_length)
+        )
+        mngo_left: InstrumentValue = InstrumentValue(
+            mngo, mngo.shift_to_decimals(layout.mngo_left)
+        )
+        mngo_per_period: InstrumentValue = InstrumentValue(
+            mngo, mngo.shift_to_decimals(layout.mngo_per_period)
+        )
 
-        return LiquidityMiningInfo(version, rate, max_depth_bps, period_start, target_period_length,
-                                   mngo_left, mngo_per_period)
+        return LiquidityMiningInfo(
+            version,
+            rate,
+            max_depth_bps,
+            period_start,
+            target_period_length,
+            mngo_left,
+            mngo_per_period,
+        )
 
     def __str__(self) -> str:
         # Some calculations here are basd on this message from 0xHiroku#0491 on Discord:
@@ -65,20 +88,26 @@ class LiquidityMiningInfo:
         #   portion_given = 1 - mngoLeft / mngoPerPeriod
         #   elapsed = (<current_time> - periodStart) / targetPeriodLength
         #   est_next = elapsed / portion_given - elapsed
-        now: datetime = datetime.now().replace(microsecond=0).astimezone(timezone.utc)
+        now: datetime = utc_now().replace(microsecond=0)
         mngo_distributed: InstrumentValue = self.mngo_per_period - self.mngo_left
         proportion_distributed: Decimal = Decimal(0)
         elapsed: timedelta = now - self.period_start
         elapsed_seconds: float = elapsed.total_seconds()
         rounded_elapsed: timedelta = timedelta(seconds=int(elapsed_seconds))
         estimated_duration_seconds: float = elapsed_seconds
-        estimated_duration: timedelta = timedelta(seconds=int(estimated_duration_seconds))
-        estimated_remaining_seconds: float = estimated_duration_seconds - elapsed_seconds
-        estimated_remaining: timedelta = timedelta(seconds=int(estimated_remaining_seconds))
+        estimated_duration: timedelta = timedelta(
+            seconds=int(estimated_duration_seconds)
+        )
+        estimated_remaining_seconds: float = (
+            estimated_duration_seconds - elapsed_seconds
+        )
+        estimated_remaining: timedelta = timedelta(
+            seconds=int(estimated_remaining_seconds)
+        )
         estimated_end: datetime = now + estimated_remaining
         if self.mngo_per_period.value != 0:
             proportion_distributed = mngo_distributed.value / self.mngo_per_period.value
-            estimated_duration_seconds = (elapsed_seconds / float(proportion_distributed))
+            estimated_duration_seconds = elapsed_seconds / float(proportion_distributed)
             estimated_duration = timedelta(seconds=int(estimated_duration_seconds))
             estimated_remaining_seconds = estimated_duration_seconds - elapsed_seconds
             estimated_remaining = timedelta(seconds=int(estimated_remaining_seconds))
@@ -104,12 +133,26 @@ class LiquidityMiningInfo:
 # `PerpMarketDetails` holds details of a particular perp market.
 #
 class PerpMarketDetails(AddressableAccount):
-    def __init__(self, account_info: AccountInfo, version: Version,
-                 meta_data: Metadata, group: Group, bids: PublicKey, asks: PublicKey,
-                 event_queue: PublicKey, base_lot_size: Decimal, quote_lot_size: Decimal, long_funding: Decimal,
-                 short_funding: Decimal, open_interest: Decimal, last_updated: datetime, seq_num: Decimal,
-                 fees_accrued: Decimal, liquidity_mining_info: LiquidityMiningInfo,
-                 mngo_vault: PublicKey) -> None:
+    def __init__(
+        self,
+        account_info: AccountInfo,
+        version: Version,
+        meta_data: Metadata,
+        group: Group,
+        bids: PublicKey,
+        asks: PublicKey,
+        event_queue: PublicKey,
+        base_lot_size: Decimal,
+        quote_lot_size: Decimal,
+        long_funding: Decimal,
+        short_funding: Decimal,
+        open_interest: Decimal,
+        last_updated: datetime,
+        seq_num: Decimal,
+        fees_accrued: Decimal,
+        liquidity_mining_info: LiquidityMiningInfo,
+        mngo_vault: PublicKey,
+    ) -> None:
         super().__init__(account_info)
         self.version: Version = version
 
@@ -131,7 +174,9 @@ class PerpMarketDetails(AddressableAccount):
 
         slot: GroupSlot = group.slot_by_perp_market_address(self.address)
         if slot is None:
-            raise Exception(f"Could not find slot for perp market {self.address} in group {group.address}.")
+            raise Exception(
+                f"Could not find slot for perp market {self.address} in group {group.address}."
+            )
 
         self.market_index: int = slot.index
 
@@ -140,7 +185,9 @@ class PerpMarketDetails(AddressableAccount):
         self.quote_token: TokenBank = group.shared_quote
 
     @staticmethod
-    def from_layout(layout: typing.Any, account_info: AccountInfo, version: Version, group: Group) -> "PerpMarketDetails":
+    def from_layout(
+        layout: typing.Any, account_info: AccountInfo, version: Version, group: Group
+    ) -> "PerpMarketDetails":
         meta_data = Metadata.from_layout(layout.meta_data)
         bids: PublicKey = layout.bids
         asks: PublicKey = layout.asks
@@ -156,20 +203,37 @@ class PerpMarketDetails(AddressableAccount):
 
         fees_accrued: Decimal = layout.fees_accrued
         liquidity_mining_info: LiquidityMiningInfo = LiquidityMiningInfo.from_layout(
-            layout.liquidity_mining_info, Version.V1, group.liquidity_incentive_token)
+            layout.liquidity_mining_info, Version.V1, group.liquidity_incentive_token
+        )
         mngo_vault: PublicKey = layout.mngo_vault
 
-        return PerpMarketDetails(account_info, version, meta_data, group, bids, asks, event_queue,
-                                 base_lot_size, quote_lot_size, long_funding, short_funding, open_interest,
-                                 last_updated, seq_num, fees_accrued, liquidity_mining_info,
-                                 mngo_vault)
+        return PerpMarketDetails(
+            account_info,
+            version,
+            meta_data,
+            group,
+            bids,
+            asks,
+            event_queue,
+            base_lot_size,
+            quote_lot_size,
+            long_funding,
+            short_funding,
+            open_interest,
+            last_updated,
+            seq_num,
+            fees_accrued,
+            liquidity_mining_info,
+            mngo_vault,
+        )
 
     @staticmethod
     def parse(account_info: AccountInfo, group: Group) -> "PerpMarketDetails":
         data = account_info.data
         if len(data) != layouts.PERP_MARKET.sizeof():
             raise Exception(
-                f"PerpMarketDetails data length ({len(data)}) does not match expected size ({layouts.PERP_MARKET.sizeof()})")
+                f"PerpMarketDetails data length ({len(data)}) does not match expected size ({layouts.PERP_MARKET.sizeof()})"
+            )
 
         layout = layouts.PERP_MARKET.parse(data)
         return PerpMarketDetails.from_layout(layout, account_info, Version.V1, group)
@@ -178,11 +242,15 @@ class PerpMarketDetails(AddressableAccount):
     def load(context: Context, address: PublicKey, group: Group) -> "PerpMarketDetails":
         account_info = AccountInfo.load(context, address)
         if account_info is None:
-            raise Exception(f"PerpMarketDetails account not found at address '{address}'")
+            raise Exception(
+                f"PerpMarketDetails account not found at address '{address}'"
+            )
         return PerpMarketDetails.parse(account_info, group)
 
     def __str__(self) -> str:
-        liquidity_mining_info: str = f"{self.liquidity_mining_info}".replace("\n", "\n        ")
+        liquidity_mining_info: str = f"{self.liquidity_mining_info}".replace(
+            "\n", "\n        "
+        )
         return f"""« PerpMarketDetails {self.version} [{self.address}]
     {self.meta_data}
     Group: {self.group.address}

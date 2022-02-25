@@ -1,10 +1,8 @@
-FROM python:3.9-buster
+FROM python:3.10-slim
 
-RUN sh -c "$(curl -sSfL https://release.solana.com/v1.8.4/install)"
+RUN apt-get update && apt-get -y install bc curl zlib1g-dev && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-RUN apt-get update && apt-get -y install bc curl zlib1g-dev
-
-RUN mkdir /app 
+RUN mkdir /app
 COPY ./pyproject.toml ./poetry.lock ./
 
 WORKDIR /app

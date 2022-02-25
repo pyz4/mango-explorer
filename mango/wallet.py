@@ -60,7 +60,7 @@ class Wallet:
     def __init__(self, secret_key: bytes) -> None:
         self._logger: logging.Logger = logging.getLogger(self.__class__.__name__)
         self.secret_key: bytes = secret_key[0:32]
-        self.keypair: Keypair = Keypair(self.secret_key)
+        self.keypair: Keypair = Keypair.from_secret_key(self.secret_key)
 
     @property
     def address(self) -> PublicKey:
@@ -71,7 +71,7 @@ class Wallet:
             raise Exception(f"Wallet file '{filename}' already exists.")
 
         with open(filename, "w") as json_file:
-            json.dump(list(self.secret_key), json_file)
+            json.dump(list(self.keypair.secret_key), json_file)
 
     @staticmethod
     def load(filename: str = _DEFAULT_WALLET_FILENAME) -> "Wallet":
@@ -81,13 +81,12 @@ class Wallet:
         else:
             with open(filename) as json_file:
                 data = json.load(json_file)
-                return Wallet(data)
+                return Wallet(bytes(bytearray(data)))
 
     @staticmethod
     def create() -> "Wallet":
-        new_account = Keypair()
-        new_secret_key = new_account.secret_key
-        return Wallet(new_secret_key)
+        new_account = Keypair.generate()
+        return Wallet(new_account.secret_key)
 
     # Configuring a `Wallet` is a common operation for command-line programs and can involve a
     # lot of duplicate code.
@@ -96,8 +95,12 @@ class Wallet:
     #
     @staticmethod
     def add_command_line_parameters(parser: argparse.ArgumentParser) -> None:
-        parser.add_argument("--id-file", type=str, default=_DEFAULT_WALLET_FILENAME,
-                            help="file containing the JSON-formatted wallet private key")
+        parser.add_argument(
+            "--id-file",
+            type=str,
+            default=_DEFAULT_WALLET_FILENAME,
+            help="file containing the JSON-formatted wallet private key",
+        )
 
     # This function is the converse of `add_command_line_parameters()` - it takes
     # an argument of parsed command-line parameters and expects to see the ones it added
@@ -106,14 +109,18 @@ class Wallet:
     # It then uses those parameters to create a properly-configured `Wallet` object.
     #
     @staticmethod
-    def from_command_line_parameters(args: argparse.Namespace) -> typing.Optional["Wallet"]:
+    def from_command_line_parameters(
+        args: argparse.Namespace,
+    ) -> typing.Optional["Wallet"]:
         # We always have an args.id_file (because we specify a default) so check for the environment
         # variable and give it priority.
-        environment_secret_key = os.environ.get("KEYPAIR") or os.environ.get("SECRET_KEY")
+        environment_secret_key = os.environ.get("KEYPAIR") or os.environ.get(
+            "SECRET_KEY"
+        )
         if environment_secret_key is not None:
             secret_key_bytes = json.loads(environment_secret_key)
             if len(secret_key_bytes) >= 32:
-                return Wallet(secret_key_bytes)
+                return Wallet(bytes(secret_key_bytes))
 
         # Here we should have values for all our parameters.
         id_filename = args.id_file

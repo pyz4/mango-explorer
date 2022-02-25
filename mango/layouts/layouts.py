@@ -49,10 +49,13 @@ from solana.publickey import PublicKey
 # A simple construct `Adapter` that lets us use `Decimal`s directly in our structs.
 #
 if typing.TYPE_CHECKING:
+
     class DecimalAdapter(construct.Adapter[Decimal, int, typing.Any, typing.Any]):
         def __init__(self, size: int = 8) -> None:
             pass
+
 else:
+
     class DecimalAdapter(construct.Adapter):
         def __init__(self, size: int = 8) -> None:
             super().__init__(construct.BytesInteger(size, swapped=True))
@@ -86,10 +89,13 @@ else:
 # divisor so the mid-point of the whole sequence of bits is the fixed point.)
 #
 if typing.TYPE_CHECKING:
+
     class FloatAdapter(construct.Adapter[Decimal, int, typing.Any, typing.Any]):
         def __init__(self, size: int = 16) -> None:
             pass
+
 else:
+
     class FloatAdapter(construct.Adapter):
         def __init__(self, size: int = 16) -> None:
             self.size = size
@@ -102,7 +108,7 @@ else:
             fixed_point = bit_size / 2
 
             # So our divisor is 2 to the power of the fixed point
-            self.divisor = Decimal(2 ** fixed_point)
+            self.divisor = Decimal(2**fixed_point)
 
         def _decode(self, obj: int, context: typing.Any, path: typing.Any) -> Decimal:
             return Decimal(obj) / self.divisor
@@ -116,10 +122,13 @@ else:
 # Another simple `Decimal` `Adapter` but this one specifically works with signed decimals.
 #
 if typing.TYPE_CHECKING:
+
     class SignedDecimalAdapter(construct.Adapter[Decimal, int, typing.Any, typing.Any]):
         def __init__(self, size: int = 8) -> None:
             pass
+
 else:
+
     class SignedDecimalAdapter(construct.Adapter):
         def __init__(self, size: int = 8) -> None:
             super().__init__(construct.BytesInteger(size, signed=True, swapped=True))
@@ -137,20 +146,27 @@ else:
 # A simple construct `Adapter` that lets us use `PublicKey`s directly in our structs.
 #
 if typing.TYPE_CHECKING:
+
     class PublicKeyAdapter(construct.Adapter[PublicKey, bytes, typing.Any, typing.Any]):
         def __init__(self) -> None:
             pass
+
 else:
+
     class PublicKeyAdapter(construct.Adapter):
         def __init__(self) -> None:
             super().__init__(construct.Bytes(32))
 
-        def _decode(self, obj: bytes, context: typing.Any, path: typing.Any) -> typing.Optional[PublicKey]:
+        def _decode(
+            self, obj: bytes, context: typing.Any, path: typing.Any
+        ) -> typing.Optional[PublicKey]:
             if (obj is None) or (obj == bytes([0] * 32)):
                 return None
             return PublicKey(obj)
 
-        def _encode(self, obj: PublicKey, context: typing.Any, path: typing.Any) -> bytes:
+        def _encode(
+            self, obj: PublicKey, context: typing.Any, path: typing.Any
+        ) -> bytes:
             return bytes(obj)
 
 
@@ -159,18 +175,27 @@ else:
 # A simple construct `Adapter` that lets us load `datetime`s directly in our structs.
 #
 if typing.TYPE_CHECKING:
-    class DatetimeAdapter(construct.Adapter[datetime.datetime, int, typing.Any, typing.Any]):
+
+    class DatetimeAdapter(
+        construct.Adapter[datetime.datetime, int, typing.Any, typing.Any]
+    ):
         def __init__(self) -> None:
             pass
+
 else:
+
     class DatetimeAdapter(construct.Adapter):
         def __init__(self) -> None:
             super().__init__(construct.BytesInteger(8, swapped=True))
 
-        def _decode(self, obj: int, context: typing.Any, path: typing.Any) -> datetime.datetime:
+        def _decode(
+            self, obj: int, context: typing.Any, path: typing.Any
+        ) -> datetime.datetime:
             return datetime.datetime.fromtimestamp(obj, tz=datetime.timezone.utc)
 
-        def _encode(self, obj: datetime.datetime, context: typing.Any, path: typing.Any) -> int:
+        def _encode(
+            self, obj: datetime.datetime, context: typing.Any, path: typing.Any
+        ) -> int:
             return int(obj.timestamp())
 
 
@@ -183,21 +208,26 @@ else:
 # integer part and the last 6 bytes are the fractional part.
 #
 if typing.TYPE_CHECKING:
+
     class FloatI80F48Adapter(construct.Adapter[Decimal, int, typing.Any, typing.Any]):
         def __init__(self) -> None:
             pass
+
 else:
+
     class FloatI80F48Adapter(construct.Adapter):
         def __init__(self) -> None:
             self.size = 16
-            super().__init__(construct.BytesInteger(self.size, signed=True, swapped=True))
+            super().__init__(
+                construct.BytesInteger(self.size, signed=True, swapped=True)
+            )
 
             # For our string of bits, our 'fixed point' is between the 10th byte and 11th byte. We want
             # the last 6 bytes to be fractional, so:
             fixed_point_in_bits = 8 * 6
 
             # So our divisor is 2 to the power of the fixed point
-            self.divisor = Decimal(2 ** fixed_point_in_bits)
+            self.divisor = Decimal(2**fixed_point_in_bits)
 
         def _decode(self, obj: int, context: typing.Any, path: typing.Any) -> Decimal:
             # How many decimal places precision should we allow for an I80F48? TypeScript seems to have
@@ -207,7 +237,9 @@ else:
             # than 20, not raise an exception when we have a sufficiently rounded number already.
             value: Decimal = Decimal(obj)
             divided: Decimal = value / self.divisor
-            return divided.quantize(Decimal('.00000000000000000001'), context=DecimalContext(prec=100))
+            return divided.quantize(
+                Decimal(".00000000000000000001"), context=DecimalContext(prec=100)
+            )
 
         def _encode(self, obj: Decimal, context: typing.Any, path: typing.Any) -> int:
             return int(obj)
@@ -226,28 +258,37 @@ else:
 # dictionary.
 #
 if typing.TYPE_CHECKING:
-    class BookPriceAdapter(construct.Adapter[typing.Dict[str, Decimal], bytes, typing.Any, typing.Any]):
+
+    class BookPriceAdapter(
+        construct.Adapter[typing.Dict[str, Decimal], bytes, typing.Any, typing.Any]
+    ):
         def __init__(self) -> None:
             pass
+
 else:
+
     class BookPriceAdapter(construct.Adapter):
         def __init__(self) -> None:
             super().__init__(construct.Bytes(16))
 
-        def _decode(self, obj: bytes, context: typing.Any, path: typing.Any) -> typing.Dict[str, Decimal]:
-            order_id = Decimal(int.from_bytes(obj, 'little', signed=False))
+        def _decode(
+            self, obj: bytes, context: typing.Any, path: typing.Any
+        ) -> typing.Dict[str, Decimal]:
+            order_id = Decimal(int.from_bytes(obj, "little", signed=False))
             low_order = obj[:8]
             high_order = obj[8:]
-            sequence_number = Decimal(int.from_bytes(low_order, 'little', signed=False))
-            price = Decimal(int.from_bytes(high_order, 'little', signed=False))
+            sequence_number = Decimal(int.from_bytes(low_order, "little", signed=False))
+            price = Decimal(int.from_bytes(high_order, "little", signed=False))
 
             return {
                 "order_id": order_id,
                 "price": price,
-                "sequence_number": sequence_number
+                "sequence_number": sequence_number,
             }
 
-        def _encode(self, obj: typing.Dict[str, Decimal], context: typing.Any, path: typing.Any) -> bytes:
+        def _encode(
+            self, obj: typing.Dict[str, Decimal], context: typing.Any, path: typing.Any
+        ) -> bytes:
             # Not done yet
             raise NotImplementedError()
 
@@ -262,15 +303,22 @@ _NODE_SIZE = 88
 
 
 if typing.TYPE_CHECKING:
-    class OrderBookNodeAdapter(construct.Adapter[typing.Any, typing.Any, typing.Any, typing.Any]):
+
+    class OrderBookNodeAdapter(
+        construct.Adapter[typing.Any, typing.Any, typing.Any, typing.Any]
+    ):
         def __init__(self) -> None:
             pass
+
 else:
+
     class OrderBookNodeAdapter(construct.Adapter):
         def __init__(self) -> None:
             super().__init__(construct.Bytes(_NODE_SIZE))
 
-        def _decode(self, obj: bytes, context: typing.Any, path: typing.Any) -> typing.Any:
+        def _decode(
+            self, obj: bytes, context: typing.Any, path: typing.Any
+        ) -> typing.Any:
             any_node = ANY_NODE.parse(obj)
             if any_node.tag == Decimal(0):
                 return UNINITIALIZED_BOOK_NODE.parse(obj)
@@ -285,7 +333,9 @@ else:
 
             raise Exception(f"Unknown node type tag: {any_node.tag}")
 
-        def _encode(self, obj: typing.Any, context: typing.Any, path: typing.Any) -> typing.Any:
+        def _encode(
+            self, obj: typing.Any, context: typing.Any, path: typing.Any
+        ) -> typing.Any:
             # Not done yet
             raise NotImplementedError()
 
@@ -319,7 +369,7 @@ ACCOUNT_FLAGS = construct.BitsSwapped(
         "bids" / construct.Flag,
         "asks" / construct.Flag,
         "disabled" / construct.Flag,
-        construct.Padding(7 * 8)
+        construct.Padding(7 * 8),
     )
 )
 
@@ -329,7 +379,7 @@ TOKEN_ACCOUNT = construct.Struct(
     "mint" / PublicKeyAdapter(),
     "owner" / PublicKeyAdapter(),
     "amount" / DecimalAdapter(),
-    "padding" / construct.Padding(93)
+    "padding" / construct.Padding(93),
 )
 
 
@@ -352,7 +402,7 @@ OPEN_ORDERS = construct.Struct(
     "orders" / construct.Array(128, DecimalAdapter(16)),
     "client_ids" / construct.Array(128, DecimalAdapter()),
     "referrer_rebate_accrued" / DecimalAdapter(),
-    "padding" / construct.Padding(7)
+    "padding" / construct.Padding(7),
 )
 
 # Mints and airdrops tokens from a faucet.
@@ -371,7 +421,7 @@ OPEN_ORDERS = construct.Struct(
 # /// 5. `[optional/signer]` Admin Account
 FAUCET_AIRDROP = construct.Struct(
     "variant" / construct.Const(1, construct.BytesInteger(1, swapped=True)),
-    "quantity" / DecimalAdapter()
+    "quantity" / DecimalAdapter(),
 )
 
 
@@ -383,8 +433,21 @@ MAX_BOOK_NODES: int = 1024
 MAX_ORDERS: int = 32
 MAX_PERP_OPEN_ORDERS: int = 64
 
-DATA_TYPE = construct.Enum(construct.Int8ul, Group=0, Account=1, RootBank=2,
-                           NodeBank=3, PerpMarket=4, Bids=5, Asks=6, Cache=7, EventQueue=8)
+DATA_TYPE = construct.Enum(
+    construct.Int8ul,
+    Group=0,
+    Account=1,
+    RootBank=2,
+    NodeBank=3,
+    PerpMarket=4,
+    Bids=5,
+    Asks=6,
+    Cache=7,
+    EventQueue=8,
+    AdvancedOrders=9,
+    ReferrerMemory=10,
+    ReferrerIdRecord=11,
+)
 
 
 # # 🥭 METADATA
@@ -405,7 +468,7 @@ METADATA = construct.Struct(
     "data_type" / DATA_TYPE,
     "version" / DecimalAdapter(1),
     "is_initialized" / DecimalAdapter(1),
-    "padding" / construct.Padding(5)
+    "padding" / construct.Padding(5),
 )
 
 
@@ -426,7 +489,7 @@ TOKEN_INFO = construct.Struct(
     "mint" / PublicKeyAdapter(),
     "root_bank" / PublicKeyAdapter(),
     "decimals" / DecimalAdapter(1),
-    "padding" / construct.Padding(7)
+    "padding" / construct.Padding(7),
 )
 
 
@@ -451,7 +514,7 @@ SPOT_MARKET_INFO = construct.Struct(
     "init_asset_weight" / FloatI80F48Adapter(),
     "maint_liab_weight" / FloatI80F48Adapter(),
     "init_liab_weight" / FloatI80F48Adapter(),
-    "liquidation_fee" / FloatI80F48Adapter()
+    "liquidation_fee" / FloatI80F48Adapter(),
 )
 
 # # 🥭 PERP_MARKET_INFO
@@ -515,7 +578,11 @@ PERP_MARKET_INFO = construct.Struct(
 #     pub msrm_vault: Pubkey,
 #     pub fees_vault: Pubkey,
 #
-#     pub padding: [u8; 32], // padding used for future expansions
+#     pub max_mango_accounts: u32, // limits maximum number of MangoAccounts.v1 (closeable) accounts
+#     pub num_mango_accounts: u32, // number of MangoAccounts.v1
+#
+#     pub padding: [u8; 24], // padding used for future expansions
+#
 # }
 # ```
 GROUP = construct.Struct(
@@ -535,7 +602,12 @@ GROUP = construct.Struct(
     "srm_vault" / PublicKeyAdapter(),
     "msrm_vault" / PublicKeyAdapter(),
     "fees_vault" / PublicKeyAdapter(),
-    construct.Padding(32)
+    "max_mango_accounts" / DecimalAdapter(4),
+    "num_mango_accounts" / DecimalAdapter(4),
+    "referral_surcharge_centibps" / DecimalAdapter(4),
+    "referral_share_centibps" / DecimalAdapter(4),
+    "referral_mngo_required" / DecimalAdapter(),
+    construct.Padding(8),
 )
 
 # # 🥭 ROOT_BANK
@@ -567,14 +639,12 @@ ROOT_BANK = construct.Struct(
     "optimal_util" / FloatI80F48Adapter(),
     "optimal_rate" / FloatI80F48Adapter(),
     "max_rate" / FloatI80F48Adapter(),
-
     "num_node_banks" / DecimalAdapter(),
     "node_banks" / construct.Array(MAX_NODE_BANKS, PublicKeyAdapter()),
     "deposit_index" / FloatI80F48Adapter(),
     "borrow_index" / FloatI80F48Adapter(),
     "last_updated" / DatetimeAdapter(),
-
-    construct.Padding(64)
+    construct.Padding(64),
 )
 
 # # 🥭 NODE_BANK
@@ -595,7 +665,7 @@ NODE_BANK = construct.Struct(
     "meta_data" / METADATA,
     "deposits" / FloatI80F48Adapter(),
     "borrows" / FloatI80F48Adapter(),
-    "vault" / PublicKeyAdapter()
+    "vault" / PublicKeyAdapter(),
 )
 
 # # 🥭 PERP_ACCOUNT
@@ -625,16 +695,12 @@ NODE_BANK = construct.Struct(
 PERP_ACCOUNT = construct.Struct(
     "base_position" / SignedDecimalAdapter(),
     "quote_position" / FloatI80F48Adapter(),
-
     "long_settled_funding" / FloatI80F48Adapter(),
     "short_settled_funding" / FloatI80F48Adapter(),
-
     "bids_quantity" / SignedDecimalAdapter(),
     "asks_quantity" / SignedDecimalAdapter(),
-
     "taker_base" / SignedDecimalAdapter(),
     "taker_quote" / SignedDecimalAdapter(),
-
     "mngo_accrued" / DecimalAdapter(),
 )
 
@@ -677,8 +743,21 @@ PERP_ACCOUNT = construct.Struct(
 #     /// This account cannot do anything except go through `resolve_bankruptcy`
 #     pub is_bankrupt: bool,
 #     pub info: [u8; INFO_LEN],
+#
+#     /// Starts off as zero pubkey and points to the AdvancedOrders account
+#     pub advanced_orders_key: Pubkey,
+#
+#     /// Can this account be upgraded to v1 so it can be closed
+#     pub not_upgradable: bool,
+#
+#     // Alternative authority/signer of transactions for a mango account
+#     pub delegate: Pubkey,
+#
 #     /// padding for expansions
-#     pub padding: [u8; 70],
+#     /// Note: future expansion can also be just done via isolated PDAs
+#     /// which can be computed independently and dont need to be linked from
+#     /// this account
+#     pub padding: [u8; 5],
 # }
 # ```
 MANGO_ACCOUNT = construct.Struct(
@@ -697,9 +776,12 @@ MANGO_ACCOUNT = construct.Struct(
     "client_order_ids" / construct.Array(MAX_PERP_OPEN_ORDERS, DecimalAdapter()),
     "msrm_amount" / DecimalAdapter(),
     "being_liquidated" / DecimalAdapter(1),
-    "is_bankrupt" / DecimalAdapter(1),
+    "is_bankrupt" / construct.Flag,
     "info" / construct.PaddedString(32, "utf8"),
-    construct.Padding(70)
+    "advanced_orders" / PublicKeyAdapter(),
+    "not_upgradable" / construct.Flag,
+    "delegate" / PublicKeyAdapter(),
+    construct.Padding(5),
 )
 
 # # 🥭 LIQUIDITY_MINING_INFO
@@ -730,16 +812,11 @@ MANGO_ACCOUNT = construct.Struct(
 # ```
 LIQUIDITY_MINING_INFO = construct.Struct(
     "rate" / FloatI80F48Adapter(),
-
     "max_depth_bps" / FloatI80F48Adapter(),
-
     "period_start" / DatetimeAdapter(),
-
     "target_period_length" / DecimalAdapter(),
-
     "mngo_left" / DecimalAdapter(),
-
-    "mngo_per_period" / DecimalAdapter()
+    "mngo_per_period" / DecimalAdapter(),
 )
 
 
@@ -785,19 +862,14 @@ PERP_MARKET = construct.Struct(
     "event_queue" / PublicKeyAdapter(),
     "quote_lot_size" / SignedDecimalAdapter(),
     "base_lot_size" / SignedDecimalAdapter(),
-
     "long_funding" / FloatI80F48Adapter(),
     "short_funding" / FloatI80F48Adapter(),
-
     "open_interest" / SignedDecimalAdapter(),
-
     "last_updated" / DatetimeAdapter(),
     "seq_num" / DecimalAdapter(),
     "fees_accrued" / FloatI80F48Adapter(),
-
     "liquidity_mining_info" / LIQUIDITY_MINING_INFO,
-
-    "mngo_vault" / PublicKeyAdapter()
+    "mngo_vault" / PublicKeyAdapter(),
 )
 
 
@@ -814,10 +886,12 @@ PERP_MARKET = construct.Struct(
 # }
 # ```
 ANY_NODE = construct.Struct(
-    "tag" / DecimalAdapter(4),
-    "data" / construct.Bytes(_NODE_SIZE - 4)
+    "tag" / DecimalAdapter(4), "data" / construct.Bytes(_NODE_SIZE - 4)
 )
-assert ANY_NODE.sizeof() == _NODE_SIZE
+if ANY_NODE.sizeof() != _NODE_SIZE:
+    raise Exception(
+        f"Incorrect size for ANY_NODE: expected: {_NODE_SIZE}, got: {ANY_NODE.sizeof()}"
+    )
 
 
 # # 🥭 UNINITIALIZED_BOOK_NODE
@@ -827,9 +901,12 @@ assert ANY_NODE.sizeof() == _NODE_SIZE
 UNINITIALIZED_BOOK_NODE = construct.Struct(
     "type_name" / construct.Computed(lambda _: "uninitialized"),
     "tag" / construct.Const(Decimal(0), DecimalAdapter(4)),
-    "data" / construct.Bytes(_NODE_SIZE - 4)
+    "data" / construct.Bytes(_NODE_SIZE - 4),
 )
-assert UNINITIALIZED_BOOK_NODE.sizeof() == ANY_NODE.sizeof()
+if UNINITIALIZED_BOOK_NODE.sizeof() != _NODE_SIZE:
+    raise Exception(
+        f"Incorrect size for UNINITIALIZED_BOOK_NODE: expected: {_NODE_SIZE}, got: {UNINITIALIZED_BOOK_NODE.sizeof()}"
+    )
 
 # # 🥭 INNER_BOOK_NODE
 #
@@ -852,21 +929,33 @@ INNER_BOOK_NODE = construct.Struct(
     "prefix_len" / DecimalAdapter(4),
     "key" / DecimalAdapter(16),
     "children" / construct.Array(2, DecimalAdapter(4)),
-    "padding" / construct.Padding(_NODE_SIZE - 32)
+    "padding" / construct.Padding(_NODE_SIZE - 32),
 )
-assert INNER_BOOK_NODE.sizeof() == ANY_NODE.sizeof()
+if INNER_BOOK_NODE.sizeof() != _NODE_SIZE:
+    raise Exception(
+        f"Incorrect size for INNER_BOOK_NODE: expected: {_NODE_SIZE}, got: {INNER_BOOK_NODE.sizeof()}"
+    )
 
 # # 🥭 LEAF_BOOK_NODE
 #
 # Here's the [Rust structure](https://github.com/blockworks-foundation/mango-v3/blob/main/program/src/matching.rs):
 # ```
+# /// LeafNodes represent an order in the binary tree
 # #[derive(Debug, Copy, Clone, PartialEq, Eq, Pod)]
 # #[repr(C)]
 # pub struct LeafNode {
 #     pub tag: u32,
 #     pub owner_slot: u8,
-#     pub padding: [u8; 3],
+#     pub order_type: OrderType, // this was added for TradingView move order
+#     pub version: u8,
+#
+#     /// Time in seconds after `timestamp` at which the order expires.
+#     /// A value of 0 means no expiry.
+#     pub time_in_force: u8,
+#
+#     /// The binary tree key
 #     pub key: i128,
+#
 #     pub owner: Pubkey,
 #     pub quantity: i64,
 #     pub client_order_id: u64,
@@ -875,7 +964,7 @@ assert INNER_BOOK_NODE.sizeof() == ANY_NODE.sizeof()
 #     // Either the best bid or best ask at the time the order was placed
 #     pub best_initial: i64,
 #
-#     // The time the order was place
+#     // The time the order was placed
 #     pub timestamp: u64,
 # }
 # ```
@@ -884,18 +973,22 @@ LEAF_BOOK_NODE = construct.Struct(
     "tag" / construct.Const(Decimal(2), DecimalAdapter(4)),
     # Index into OPEN_ORDERS_LAYOUT.orders
     "owner_slot" / DecimalAdapter(1),
-    "padding" / construct.Padding(3),
+    "order_type" / DecimalAdapter(1),
+    "version" / DecimalAdapter(1),
+    "time_in_force" / DecimalAdapter(1),
     # (price, seqNum)
     "key" / BookPriceAdapter(),
     "owner" / PublicKeyAdapter(),
     # In units of lot size
     "quantity" / DecimalAdapter(),
     "client_order_id" / DecimalAdapter(),
-
     "best_initial" / SignedDecimalAdapter(),
-    "timestamp" / DatetimeAdapter()
+    "timestamp" / DatetimeAdapter(),
 )
-assert LEAF_BOOK_NODE.sizeof() == ANY_NODE.sizeof()
+if LEAF_BOOK_NODE.sizeof() != _NODE_SIZE:
+    raise Exception(
+        f"Incorrect size for LEAF_BOOK_NODE: expected: {_NODE_SIZE}, got: {LEAF_BOOK_NODE.sizeof()}"
+    )
 
 # # 🥭 FREE_BOOK_NODE
 #
@@ -913,11 +1006,15 @@ FREE_BOOK_NODE = construct.Struct(
     "type_name" / construct.Computed(lambda _: "free"),
     "tag" / construct.Const(Decimal(3), DecimalAdapter(4)),
     "next" / DecimalAdapter(4),
-    "padding" / construct.Padding(_NODE_SIZE - 8)
+    "padding" / construct.Padding(_NODE_SIZE - 8),
 )
-assert FREE_BOOK_NODE.sizeof() == ANY_NODE.sizeof()
+if FREE_BOOK_NODE.sizeof() != _NODE_SIZE:
+    raise Exception(
+        f"Incorrect size for FREE_BOOK_NODE: expected: {_NODE_SIZE}, got: {FREE_BOOK_NODE.sizeof()}"
+    )
 
-# # 🥭 FREE_BOOK_NODE
+
+# # 🥭 LAST_FREE_BOOK_NODE
 #
 # Last Free Node is identical to free node, apart from the tag.
 #
@@ -925,9 +1022,12 @@ LAST_FREE_BOOK_NODE = construct.Struct(
     "type_name" / construct.Computed(lambda _: "last_free"),
     "tag" / construct.Const(Decimal(4), DecimalAdapter(4)),
     "next" / DecimalAdapter(4),
-    "padding" / construct.Padding(_NODE_SIZE - 8)
+    "padding" / construct.Padding(_NODE_SIZE - 8),
 )
-assert LAST_FREE_BOOK_NODE.sizeof() == ANY_NODE.sizeof()
+if LAST_FREE_BOOK_NODE.sizeof() != _NODE_SIZE:
+    raise Exception(
+        f"Incorrect size for LAST_FREE_BOOK_NODE: expected: {_NODE_SIZE}, got: {LAST_FREE_BOOK_NODE.sizeof()}"
+    )
 
 
 # # 🥭 ORDERBOOK_SIDE
@@ -956,7 +1056,7 @@ ORDERBOOK_SIDE = construct.Struct(
     "free_list_head" / DecimalAdapter(4),
     "root_node" / DecimalAdapter(4),
     "leaf_count" / DecimalAdapter(),
-    "nodes" / construct.Array(MAX_BOOK_NODES, OrderBookNodeAdapter())
+    "nodes" / construct.Array(MAX_BOOK_NODES, OrderBookNodeAdapter()),
 )
 
 
@@ -997,32 +1097,31 @@ ORDERBOOK_SIDE = construct.Struct(
 # }
 # ```
 FILL_EVENT = construct.Struct(
-    "event_type" / construct.Const(b'\x00'),
+    "event_type" / construct.Const(b"\x00"),
     "taker_side" / DecimalAdapter(1),
     "maker_slot" / DecimalAdapter(1),
     "maker_out" / construct.Flag,
     construct.Padding(4),
     "timestamp" / DatetimeAdapter(),
     "seq_num" / DecimalAdapter(),
-
     "maker" / PublicKeyAdapter(),
     "maker_order_id" / SignedDecimalAdapter(16),
     "maker_client_order_id" / DecimalAdapter(),
     "maker_fee" / FloatI80F48Adapter(),
-
     "best_initial" / SignedDecimalAdapter(),
     "maker_timestamp" / DatetimeAdapter(),
-
     "taker" / PublicKeyAdapter(),
     "taker_order_id" / SignedDecimalAdapter(16),
     "taker_client_order_id" / DecimalAdapter(),
     "taker_fee" / FloatI80F48Adapter(),
-
     "price" / SignedDecimalAdapter(),
-    "quantity" / SignedDecimalAdapter()
+    "quantity" / SignedDecimalAdapter(),
 )
 _EVENT_SIZE = 200
-assert FILL_EVENT.sizeof() == _EVENT_SIZE, f"Fill event size is {FILL_EVENT.sizeof()} when it should be {_EVENT_SIZE}."
+if FILL_EVENT.sizeof() != _EVENT_SIZE:
+    raise Exception(
+        f"Fill event size is {FILL_EVENT.sizeof()} when it should be {_EVENT_SIZE}."
+    )
 
 # # 🥭 OUT_EVENT
 #
@@ -1043,7 +1142,7 @@ assert FILL_EVENT.sizeof() == _EVENT_SIZE, f"Fill event size is {FILL_EVENT.size
 # }
 # ```
 OUT_EVENT = construct.Struct(
-    "event_type" / construct.Const(b'\x01'),
+    "event_type" / construct.Const(b"\x01"),
     "side" / DecimalAdapter(1),
     "slot" / DecimalAdapter(1),
     construct.Padding(5),
@@ -1051,9 +1150,13 @@ OUT_EVENT = construct.Struct(
     "seq_num" / DecimalAdapter(),
     "owner" / PublicKeyAdapter(),
     "quantity" / SignedDecimalAdapter(),
-    construct.Padding(_EVENT_SIZE - 64)
+    construct.Padding(_EVENT_SIZE - 64),
 )
-assert OUT_EVENT.sizeof() == _EVENT_SIZE, f"Out event size is {OUT_EVENT.sizeof()} when it should be {_EVENT_SIZE}."
+if OUT_EVENT.sizeof() != _EVENT_SIZE:
+    raise Exception(
+        f"Out event size is {OUT_EVENT.sizeof()} when it should be {_EVENT_SIZE}."
+    )
+
 
 # # 🥭 LIQUIDATE_EVENT
 #
@@ -1076,7 +1179,7 @@ assert OUT_EVENT.sizeof() == _EVENT_SIZE, f"Out event size is {OUT_EVENT.sizeof(
 # }
 # ```
 LIQUIDATE_EVENT = construct.Struct(
-    "event_type" / construct.Const(b'\x02'),
+    "event_type" / construct.Const(b"\x02"),
     construct.Padding(7),
     "timestamp" / DatetimeAdapter(),
     "seq_num" / DecimalAdapter(),
@@ -1085,19 +1188,25 @@ LIQUIDATE_EVENT = construct.Struct(
     "price" / FloatI80F48Adapter(),
     "quantity" / SignedDecimalAdapter(),
     "liquidation_fee" / FloatI80F48Adapter(),
-    construct.Padding(_EVENT_SIZE - 128)
+    construct.Padding(_EVENT_SIZE - 128),
 )
-assert LIQUIDATE_EVENT.sizeof(
-) == _EVENT_SIZE, f"Liquidate event size is {LIQUIDATE_EVENT.sizeof()} when it should be {_EVENT_SIZE}."
+if LIQUIDATE_EVENT.sizeof() != _EVENT_SIZE:
+    raise Exception(
+        f"Liquidate event size is {LIQUIDATE_EVENT.sizeof()} when it should be {_EVENT_SIZE}."
+    )
+
 
 UNKNOWN_EVENT = construct.Struct(
     "event_type" / construct.Bytes(1),
     construct.Padding(7),
     "owner" / PublicKeyAdapter(),
-    construct.Padding(_EVENT_SIZE - 40)
+    construct.Padding(_EVENT_SIZE - 40),
 )
-assert UNKNOWN_EVENT.sizeof(
-) == _EVENT_SIZE, f"Unknown event size is {UNKNOWN_EVENT.sizeof()} when it should be {_EVENT_SIZE}."
+if UNKNOWN_EVENT.sizeof() != _EVENT_SIZE:
+    raise Exception(
+        f"Unknown event size is {UNKNOWN_EVENT.sizeof()} when it should be {_EVENT_SIZE}."
+    )
+
 
 # # 🥭 PERP_EVENT_QUEUE
 #
@@ -1127,7 +1236,10 @@ PERP_EVENT_QUEUE = construct.Struct(
     "seq_num" / DecimalAdapter(),
     # "maker_fee" / FloatI80F48Adapter(),
     # "taker_fee" / FloatI80F48Adapter(),
-    "events" / construct.GreedyRange(construct.Select(FILL_EVENT, OUT_EVENT, LIQUIDATE_EVENT, UNKNOWN_EVENT))
+    "events"
+    / construct.GreedyRange(
+        construct.Select(FILL_EVENT, OUT_EVENT, LIQUIDATE_EVENT, UNKNOWN_EVENT)
+    ),
 )
 
 # # 🥭 SERUM_EVENT_QUEUE
@@ -1141,7 +1253,9 @@ SERUM_EVENT_FLAGS = construct.BitsSwapped(
         "out" / construct.Flag,
         "bid" / construct.Flag,
         "maker" / construct.Flag,
-        construct.Padding(4)))
+        construct.Padding(4),
+    )
+)
 
 SERUM_EVENT = construct.Struct(
     "event_flags" / SERUM_EVENT_FLAGS,
@@ -1165,32 +1279,37 @@ SERUM_EVENT_QUEUE = construct.Struct(
     construct.Padding(4),
     "next_seq_num" / DecimalAdapter(4),
     construct.Padding(4),
-    "events" / construct.GreedyRange(SERUM_EVENT)
+    "events" / construct.GreedyRange(SERUM_EVENT),
 )
 
 
 PRICE_CACHE = construct.Struct(
-    "price" / FloatI80F48Adapter(),
-    "last_update" / DatetimeAdapter()
+    "price" / FloatI80F48Adapter(), "last_update" / DatetimeAdapter()
 )
 
 ROOT_BANK_CACHE = construct.Struct(
     "deposit_index" / FloatI80F48Adapter(),
     "borrow_index" / FloatI80F48Adapter(),
-    "last_update" / DatetimeAdapter()
+    "last_update" / DatetimeAdapter(),
 )
 
 PERP_MARKET_CACHE = construct.Struct(
     "long_funding" / FloatI80F48Adapter(),
     "short_funding" / FloatI80F48Adapter(),
-    "last_update" / DatetimeAdapter()
+    "last_update" / DatetimeAdapter(),
 )
 
 CACHE = construct.Struct(
     "meta_data" / METADATA,
     "price_cache" / construct.Array(MAX_PAIRS, PRICE_CACHE),
     "root_bank_cache" / construct.Array(MAX_TOKENS, ROOT_BANK_CACHE),
-    "perp_market_cache" / construct.Array(MAX_PAIRS, PERP_MARKET_CACHE)
+    "perp_market_cache" / construct.Array(MAX_PAIRS, PERP_MARKET_CACHE),
+)
+
+REFERRER_MEMORY = construct.Struct(
+    "meta_data" / METADATA,
+    "referrer_mango_account" / PublicKeyAdapter(),
+    "info" / construct.PaddedString(32, "utf8"),
 )
 
 
@@ -1212,57 +1331,7 @@ MANGO_INSTRUCTION_VARIANT_FINDER = construct.Struct(
 
 SERUM_INSTRUCTION_VARIANT_FINDER = construct.Struct(
     "version" / construct.BytesInteger(1, swapped=True),
-    "variant" / construct.BytesInteger(4, swapped=True)
-)
-
-# /// Place an order on a perp market
-# /// Accounts expected by this instruction (6):
-# /// 0. `[]` mango_group_ai - TODO
-# /// 1. `[writable]` mango_account_ai - TODO
-# /// 2. `[signer]` owner_ai - TODO
-# /// 3. `[]` mango_cache_ai - TODO
-# /// 4. `[writable]` perp_market_ai - TODO
-# /// 5. `[writable]` bids_ai - TODO
-# /// 6. `[writable]` asks_ai - TODO
-# /// 7. `[writable]` event_queue_ai - TODO
-PLACE_PERP_ORDER = construct.Struct(
-    "variant" / construct.Const(12, construct.BytesInteger(4, swapped=True)),
-
-    "price" / SignedDecimalAdapter(),
-    "quantity" / SignedDecimalAdapter(),
-    "client_order_id" / DecimalAdapter(),
-    "side" / DecimalAdapter(1),  # { buy: 0, sell: 1 }
-    "order_type" / DecimalAdapter(1)  # { limit: 0, ioc: 1, postOnly: 2 }
-)
-
-# /// Initialize a Mango account for a user
-# ///
-# /// Accounts expected by this instruction (4):
-# ///
-# /// 0. `[]` mango_group_ai - MangoGroup that this mango account is for
-# /// 1. `[writable]` mango_account_ai - the mango account data
-# /// 2. `[signer]` owner_ai - Solana account of owner of the mango account
-# /// 3. `[]` rent_ai - Rent sysvar account
-# InitMangoAccount,
-INIT_MANGO_ACCOUNT = construct.Struct(
-    "variant" / construct.Const(1, construct.BytesInteger(4, swapped=True))
-)
-
-
-# Cancel a Perp order using it's ID and Side.
-#
-# 0. `[]` mangoGroupPk
-# 1. `[writable]` mangoAccountPk
-# 2. `[signer]` ownerPk
-# 3. `[writable]` perpMarketPk
-# 4. `[writable]` bidsPk
-# 5. `[writable]` asksPk
-# 6. `[writable]` eventQueuePk
-CANCEL_PERP_ORDER = construct.Struct(
-    "variant" / construct.Const(14, construct.BytesInteger(4, swapped=True)),
-
-    "order_id" / DecimalAdapter(16),
-    "invalid_id_ok" / construct.Flag
+    "variant" / construct.BytesInteger(4, swapped=True),
 )
 
 
@@ -1284,8 +1353,7 @@ CANCEL_PERP_ORDER = construct.Struct(
 # },
 DEPOSIT = construct.Struct(
     "variant" / construct.Const(2, construct.BytesInteger(4, swapped=True)),
-
-    "quantity" / DecimalAdapter()
+    "quantity" / DecimalAdapter(),
 )
 
 
@@ -1311,9 +1379,8 @@ DEPOSIT = construct.Struct(
 # },
 WITHDRAW = construct.Struct(
     "variant" / construct.Const(3, construct.BytesInteger(4, swapped=True)),
-
     "quantity" / DecimalAdapter(),
-    "allow_borrow" / DecimalAdapter(1)
+    "allow_borrow" / DecimalAdapter(1),
 )
 
 
@@ -1349,16 +1416,156 @@ WITHDRAW = construct.Struct(
 # })),
 PLACE_SPOT_ORDER = construct.Struct(
     "variant" / construct.Const(9, construct.BytesInteger(4, swapped=True)),  # 4
-
-    'side' / DecimalAdapter(4),  # 8
+    "side" / DecimalAdapter(4),  # 8
     "limit_price" / DecimalAdapter(),  # 16
-    'max_base_quantity' / DecimalAdapter(),  # 24
-    'max_quote_quantity' / DecimalAdapter(),  # 32
-    'self_trade_behavior' / DecimalAdapter(4),  # 36
-    'order_type' / DecimalAdapter(4),  # 40
-    'client_id' / DecimalAdapter(),  # 48
-    'limit' / DecimalAdapter(2),  # 50
+    "max_base_quantity" / DecimalAdapter(),  # 24
+    "max_quote_quantity" / DecimalAdapter(),  # 32
+    "self_trade_behavior" / DecimalAdapter(4),  # 36
+    "order_type" / DecimalAdapter(4),  # 40
+    "client_id" / DecimalAdapter(),  # 48
+    "limit" / DecimalAdapter(2),  # 50
 )
+
+
+# /// Place an order on a perp market
+# /// Accounts expected by this instruction (6):
+# /// 0. `[]` mango_group_ai - TODO
+# /// 1. `[writable]` mango_account_ai - TODO
+# /// 2. `[signer]` owner_ai - TODO
+# /// 3. `[]` mango_cache_ai - TODO
+# /// 4. `[writable]` perp_market_ai - TODO
+# /// 5. `[writable]` bids_ai - TODO
+# /// 6. `[writable]` asks_ai - TODO
+# /// 7. `[writable]` event_queue_ai - TODO
+PLACE_PERP_ORDER = construct.Struct(
+    "variant" / construct.Const(12, construct.BytesInteger(4, swapped=True)),
+    "price" / SignedDecimalAdapter(),
+    "quantity" / SignedDecimalAdapter(),
+    "client_order_id" / DecimalAdapter(),
+    "side" / DecimalAdapter(1),  # { buy: 0, sell: 1 }
+    "order_type" / DecimalAdapter(1),  # { limit: 0, ioc: 1, postOnly: 2 }
+    "reduce_only" / construct.Optional(construct.Flag),
+)
+
+
+# Cancel a Perp order using only it's client ID.
+#
+# 0. `[]` mangoGroupPk
+# 1. `[writable]` mangoAccountPk
+# 2. `[signer]` ownerPk
+# 3. `[writable]` perpMarketPk
+# 4. `[writable]` bidsPk
+# 5. `[writable]` asksPk
+# 6. `[writable]` eventQueuePk
+CANCEL_PERP_ORDER_BY_CLIENT_ID = construct.Struct(
+    "variant" / construct.Const(13, construct.BytesInteger(4, swapped=True)),
+    "client_order_id" / DecimalAdapter(),
+    "invalid_id_ok" / construct.Optional(construct.Flag),
+)
+
+
+# Cancel a Perp order using it's ID and Side.
+#
+# 0. `[]` mangoGroupPk
+# 1. `[writable]` mangoAccountPk
+# 2. `[signer]` ownerPk
+# 3. `[writable]` perpMarketPk
+# 4. `[writable]` bidsPk
+# 5. `[writable]` asksPk
+# 6. `[writable]` eventQueuePk
+CANCEL_PERP_ORDER = construct.Struct(
+    "variant" / construct.Const(14, construct.BytesInteger(4, swapped=True)),
+    "order_id" / DecimalAdapter(16),
+    "invalid_id_ok" / construct.Optional(construct.Flag),
+)
+
+
+# Run the Mango crank.
+#
+# 0. `[]` mangoGroupPk
+# 1. `[]` perpMarketPk
+# 2. `[writable]` eventQueuePk
+# 3+ `[writable]` mangoAccountPks...
+CONSUME_EVENTS = construct.Struct(
+    "variant" / construct.Const(15, construct.BytesInteger(4, swapped=True)),
+    "limit" / DecimalAdapter(),
+)
+
+
+# /// Settle all funds from serum dex open orders
+# ///
+# /// Accounts expected by this instruction (18):
+# ///
+# /// 0. `[]` mango_group_ai - MangoGroup that this mango account is for
+# /// 1. `[]` mango_cache_ai - MangoCache for this MangoGroup
+# /// 2. `[signer]` owner_ai - MangoAccount owner
+# /// 3. `[writable]` mango_account_ai - MangoAccount
+# /// 4. `[]` dex_prog_ai - program id of serum dex
+# /// 5.  `[writable]` spot_market_ai - dex MarketState account
+# /// 6.  `[writable]` open_orders_ai - open orders for this market for this MangoAccount
+# /// 7. `[]` signer_ai - MangoGroup signer key
+# /// 8. `[writable]` dex_base_ai - base vault for dex MarketState
+# /// 9. `[writable]` dex_quote_ai - quote vault for dex MarketState
+# /// 10. `[]` base_root_bank_ai - MangoGroup base vault acc
+# /// 11. `[writable]` base_node_bank_ai - MangoGroup quote vault acc
+# /// 12. `[]` quote_root_bank_ai - MangoGroup quote vault acc
+# /// 13. `[writable]` quote_node_bank_ai - MangoGroup quote vault acc
+# /// 14. `[writable]` base_vault_ai - MangoGroup base vault acc
+# /// 15. `[writable]` quote_vault_ai - MangoGroup quote vault acc
+# /// 16. `[]` dex_signer_ai - dex Market signer account
+# /// 17. `[]` spl token program
+SETTLE_FUNDS = construct.Struct(
+    "variant" / construct.Const(19, construct.BytesInteger(4, swapped=True))
+)
+
+
+# /// Cancel an order using dex instruction
+# ///
+# /// Accounts expected by this instruction ():
+# ///
+# CancelSpotOrder {
+#     order: serum_dex::instruction::CancelOrderInstructionV2,
+# },
+CANCEL_SPOT_ORDER = construct.Struct(
+    "variant" / construct.Const(20, construct.BytesInteger(4, swapped=True)),
+    "side" / DecimalAdapter(4),
+    "order_id" / DecimalAdapter(16),
+)
+
+
+# /// Redeem the mngo_accrued in a PerpAccount for MNGO in MangoAccount deposits
+# ///
+# /// Accounts expected by this instruction (11):
+# /// 0. `[]` mango_group_ai - MangoGroup that this mango account is for
+# /// 1. `[]` mango_cache_ai - MangoCache
+# /// 2. `[writable]` mango_account_ai - MangoAccount
+# /// 3. `[signer]` owner_ai - MangoAccount owner
+# /// 4. `[]` perp_market_ai - PerpMarket
+# /// 5. `[writable]` mngo_perp_vault_ai
+# /// 6. `[]` mngo_root_bank_ai
+# /// 7. `[writable]` mngo_node_bank_ai
+# /// 8. `[writable]` mngo_bank_vault_ai
+# /// 9. `[]` signer_ai - Group Signer Account
+# /// 10. `[]` token_prog_ai - SPL Token program id
+REDEEM_MNGO = construct.Struct(
+    "variant" / construct.Const(33, construct.BytesInteger(4, swapped=True))
+)
+
+
+# /// Cancel all perp open orders (batch cancel)
+# ///
+# /// Accounts expected: 6
+# /// 0. `[]` mango_group_ai - MangoGroup
+# /// 1. `[writable]` mango_account_ai - MangoAccount
+# /// 2. `[signer]` owner_ai - Owner of Mango Account
+# /// 3. `[writable]` perp_market_ai - PerpMarket
+# /// 4. `[writable]` bids_ai - Bids acc
+# /// 5. `[writable]` asks_ai - Asks acc
+CANCEL_ALL_PERP_ORDERS = construct.Struct(
+    "variant" / construct.Const(39, construct.BytesInteger(4, swapped=True)),
+    "limit" / DecimalAdapter(1),
+)
+
 
 # Seems identical to PLACE_SPOT_ORDER except for variant.
 # { isSigner: false, isWritable: false, pubkey: mangoGroupPk },
@@ -1390,87 +1597,58 @@ PLACE_SPOT_ORDER = construct.Struct(
 # })),
 PLACE_SPOT_ORDER_2 = construct.Struct(
     "variant" / construct.Const(41, construct.BytesInteger(4, swapped=True)),  # 4
-
-    'side' / DecimalAdapter(4),  # 8
+    "side" / DecimalAdapter(4),  # 8
     "limit_price" / DecimalAdapter(),  # 16
-    'max_base_quantity' / DecimalAdapter(),  # 24
-    'max_quote_quantity' / DecimalAdapter(),  # 32
-    'self_trade_behavior' / DecimalAdapter(4),  # 36
-    'order_type' / DecimalAdapter(4),  # 40
-    'client_id' / DecimalAdapter(),  # 48
-    'limit' / DecimalAdapter(2),  # 50
+    "max_base_quantity" / DecimalAdapter(),  # 24
+    "max_quote_quantity" / DecimalAdapter(),  # 32
+    "self_trade_behavior" / DecimalAdapter(4),  # 36
+    "order_type" / DecimalAdapter(4),  # 40
+    "client_id" / DecimalAdapter(),  # 48
+    "limit" / DecimalAdapter(2),  # 50
 )
 
-# /// Cancel an order using dex instruction
+
+# /// Delete a mango account and return lamports
 # ///
-# /// Accounts expected by this instruction ():
+# /// Accounts expected by this instruction (3):
 # ///
-# CancelSpotOrder {
-#     order: serum_dex::instruction::CancelOrderInstructionV2,
-# },
-CANCEL_SPOT_ORDER = construct.Struct(
-    "variant" / construct.Const(20, construct.BytesInteger(4, swapped=True)),
-
-    'side' / DecimalAdapter(4),
-    "order_id" / DecimalAdapter(16)
+# /// 0. `[writable]` mango_group_ai - MangoGroup that this mango account is for
+# /// 1. `[writable]` mango_account_ai - the mango account data
+# /// 2. `[signer]` owner_ai - Solana account of owner of the mango account
+CLOSE_MANGO_ACCOUNT = construct.Struct(
+    "variant" / construct.Const(50, construct.BytesInteger(4, swapped=True))
 )
 
 
-# Cancel a Perp order using only it's client ID.
-#
-# 0. `[]` mangoGroupPk
-# 1. `[writable]` mangoAccountPk
-# 2. `[signer]` ownerPk
-# 3. `[writable]` perpMarketPk
-# 4. `[writable]` bidsPk
-# 5. `[writable]` asksPk
-# 6. `[writable]` eventQueuePk
-CANCEL_PERP_ORDER_BY_CLIENT_ID = construct.Struct(
-    "variant" / construct.Const(13, construct.BytesInteger(4, swapped=True)),
-
-    "client_order_id" / DecimalAdapter(),
-    "invalid_id_ok" / construct.Flag
-)
-
-# Run the Mango crank.
-#
-# 0. `[]` mangoGroupPk
-# 1. `[]` perpMarketPk
-# 2. `[writable]` eventQueuePk
-# 3+ `[writable]` mangoAccountPks...
-CONSUME_EVENTS = construct.Struct(
-    "variant" / construct.Const(15, construct.BytesInteger(4, swapped=True)),
-
-    "limit" / DecimalAdapter()
-)
-
-# /// Settle all funds from serum dex open orders
+# /// Create a PDA mango account for a user
 # ///
-# /// Accounts expected by this instruction (18):
+# /// Accounts expected by this instruction (4):
 # ///
-# /// 0. `[]` mango_group_ai - MangoGroup that this mango account is for
-# /// 1. `[]` mango_cache_ai - MangoCache for this MangoGroup
-# /// 2. `[signer]` owner_ai - MangoAccount owner
-# /// 3. `[writable]` mango_account_ai - MangoAccount
-# /// 4. `[]` dex_prog_ai - program id of serum dex
-# /// 5.  `[writable]` spot_market_ai - dex MarketState account
-# /// 6.  `[writable]` open_orders_ai - open orders for this market for this MangoAccount
-# /// 7. `[]` signer_ai - MangoGroup signer key
-# /// 8. `[writable]` dex_base_ai - base vault for dex MarketState
-# /// 9. `[writable]` dex_quote_ai - quote vault for dex MarketState
-# /// 10. `[]` base_root_bank_ai - MangoGroup base vault acc
-# /// 11. `[writable]` base_node_bank_ai - MangoGroup quote vault acc
-# /// 12. `[]` quote_root_bank_ai - MangoGroup quote vault acc
-# /// 13. `[writable]` quote_node_bank_ai - MangoGroup quote vault acc
-# /// 14. `[writable]` base_vault_ai - MangoGroup base vault acc
-# /// 15. `[writable]` quote_vault_ai - MangoGroup quote vault acc
-# /// 16. `[]` dex_signer_ai - dex Market signer account
-# /// 17. `[]` spl token program
-SETTLE_FUNDS = construct.Struct(
-    "variant" / construct.Const(19, construct.BytesInteger(4, swapped=True))
+# /// 0. `[writable]` mango_group_ai - MangoGroup that this mango account is for
+# /// 1. `[writable]` mango_account_ai - the mango account data
+# /// 2. `[signer]` owner_ai - Solana account of owner of the mango account
+# /// 3. `[]` system_prog_ai - System program
+CREATE_MANGO_ACCOUNT = construct.Struct(
+    "variant" / construct.Const(55, construct.BytesInteger(4, swapped=True)),
+    "account_num" / DecimalAdapter(),
 )
 
-# /// Initialize open orders
+
+# /// https://github.com/blockworks-foundation/mango-v3/pull/97/
+# /// Set delegate authority to mango account which can do everything regular account can do
+# /// except Withdraw and CloseMangoAccount. Set to Pubkey::default() to revoke delegate
+# ///
+# /// Accounts expected: 4
+# /// 0. `[]` mango_group_ai - MangoGroup
+# /// 1. `[writable]` mango_account_ai - MangoAccount
+# /// 2. `[signer]` owner_ai - Owner of Mango Account
+# /// 3. `[]` delegate_ai - delegate
+SET_DELEGATE = construct.Struct(
+    "variant" / construct.Const(58, construct.BytesInteger(4, swapped=True))
+)
+
+
+# /// Create an OpenOrders PDA and initialize it with InitOpenOrders call to serum dex
 # ///
 # /// Accounts expected by this instruction (8):
 # ///
@@ -1478,39 +1656,92 @@ SETTLE_FUNDS = construct.Struct(
 # /// 1. `[writable]` mango_account_ai - MangoAccount
 # /// 2. `[signer]` owner_ai - MangoAccount owner
 # /// 3. `[]` dex_prog_ai - program id of serum dex
-# /// 4. `[writable]` open_orders_ai - open orders for this market for this MangoAccount
+# /// 4. `[writable]` open_orders_ai - open orders PDA
 # /// 5. `[]` spot_market_ai - dex MarketState account
 # /// 6. `[]` signer_ai - Group Signer Account
-# /// 7. `[]` rent_ai - Rent sysvar account
-INIT_SPOT_OPEN_ORDERS = construct.Struct(
-    "variant" / construct.Const(32, construct.BytesInteger(4, swapped=True))
+# /// 7. `[]` system_prog_ai - System program
+CREATE_SPOT_OPEN_ORDERS = construct.Struct(
+    "variant" / construct.Const(60, construct.BytesInteger(4, swapped=True))
 )
 
-# /// Redeem the mngo_accrued in a PerpAccount for MNGO in MangoAccount deposits
+# /// Store the referrer's MangoAccount pubkey on the Referrer account
+# /// It will create the Referrer account as a PDA of user's MangoAccount if it doesn't exist
+# /// This is primarily useful for the UI; the referrer address stored here is not necessarily
+# /// who earns the ref fees.
 # ///
-# /// Accounts expected by this instruction (11):
+# /// Accounts expected by this instruction (7):
+# ///
 # /// 0. `[]` mango_group_ai - MangoGroup that this mango account is for
-# /// 1. `[]` mango_cache_ai - MangoCache
-# /// 2. `[writable]` mango_account_ai - MangoAccount
-# /// 3. `[signer]` owner_ai - MangoAccount owner
-# /// 4. `[]` perp_market_ai - PerpMarket
-# /// 5. `[writable]` mngo_perp_vault_ai
-# /// 6. `[]` mngo_root_bank_ai
-# /// 7. `[writable]` mngo_node_bank_ai
-# /// 8. `[writable]` mngo_bank_vault_ai
-# /// 9. `[]` signer_ai - Group Signer Account
-# /// 10. `[]` token_prog_ai - SPL Token program id
-REDEEM_MNGO = construct.Struct(
-    "variant" / construct.Const(33, construct.BytesInteger(4, swapped=True))
+# /// 1. `[]` mango_account_ai - MangoAccount of the referred
+# /// 2. `[signer]` owner_ai - MangoAccount owner or delegate
+# /// 3. `[writable]` referrer_memory_ai - ReferrerMemory struct; will be initialized if required
+# /// 4. `[]` referrer_mango_account_ai - referrer's MangoAccount
+# /// 5. `[signer, writable]` payer_ai - payer for PDA; can be same as owner
+# /// 6. `[]` system_prog_ai - System program
+SET_REFERRER_MEMORY = construct.Struct(
+    "variant" / construct.Const(62, construct.BytesInteger(4, swapped=True)),
 )
 
-UNSPECIFIED = construct.Struct(
-    "variant" / DecimalAdapter(4)
+
+# /// Associate the referrer's MangoAccount with a human readable `referrer_id` which can be used
+# /// in a ref link. This is primarily useful for the UI.
+# /// Create the `ReferrerIdRecord` PDA; if it already exists throw error
+# ///
+# /// Accounts expected by this instruction (5):
+# /// 0. `[]` mango_group_ai - MangoGroup
+# /// 1. `[]` referrer_mango_account_ai - MangoAccount
+# /// 2. `[writable]` referrer_id_record_ai - The PDA to store the record on
+# /// 3. `[signer, writable]` payer_ai - payer for PDA; can be same as owner
+# /// 4. `[]` system_prog_ai - System program
+REGISTER_REFERRER_ID = construct.Struct(
+    "variant" / construct.Const(63, construct.BytesInteger(4, swapped=True)),
+    "info" / construct.PaddedString(32, "utf8"),
 )
+
+
+# /// Place an order on a perp market
+# ///
+# /// In case this order is matched, the corresponding order structs on both
+# /// PerpAccounts (taker & maker) will be adjusted, and the position size
+# /// will be adjusted w/o accounting for fees.
+# /// In addition a FillEvent will be placed on the event queue.
+# /// Through a subsequent invocation of ConsumeEvents the FillEvent can be
+# /// executed and the perp account balances (base/quote) and fees will be
+# /// paid from the quote position. Only at this point the position balance
+# /// is 100% reflecting the trade.
+# ///
+# /// Accounts expected by this instruction (9 + `NUM_IN_MARGIN_BASKET`):
+# /// 0. `[]` mango_group_ai - MangoGroup
+# /// 1. `[writable]` mango_account_ai - the MangoAccount of owner
+# /// 2. `[signer]` owner_ai - owner of MangoAccount
+# /// 3. `[]` mango_cache_ai - MangoCache for this MangoGroup
+# /// 4. `[writable]` perp_market_ai
+# /// 5. `[writable]` bids_ai - bids account for this PerpMarket
+# /// 6. `[writable]` asks_ai - asks account for this PerpMarket
+# /// 7. `[writable]` event_queue_ai - EventQueue for this PerpMarket
+# /// 8. `[writable]` referrer_mango_account_ai - referrer's mango account;
+# ///                 pass in mango_account_ai as duplicate if you don't have a referrer
+# /// 9..9 + NUM_IN_MARGIN_BASKET `[]` open_orders_ais - pass in open orders in margin basket
+PLACE_PERP_ORDER_2 = construct.Struct(
+    "variant" / construct.Const(64, construct.BytesInteger(4, swapped=True)),
+    "price" / SignedDecimalAdapter(),
+    "max_base_quantity" / SignedDecimalAdapter(),
+    "max_quote_quantity" / SignedDecimalAdapter(),
+    "client_order_id" / DecimalAdapter(),
+    "expiry_timestamp" / DatetimeAdapter(),
+    "side" / DecimalAdapter(1),  # { buy: 0, sell: 1 }
+    "order_type" / DecimalAdapter(1),  # { limit: 0, ioc: 1, postOnly: 2 }
+    "reduce_only" / construct.Flag,
+    "limit" / DecimalAdapter(1),
+)
+
+
+UNSPECIFIED = construct.Struct("variant" / DecimalAdapter(4))
+
 
 InstructionParsersByVariant = {
     0: UNSPECIFIED,  # INIT_MANGO_GROUP,
-    1: INIT_MANGO_ACCOUNT,  # INIT_MANGO_ACCOUNT,
+    1: UNSPECIFIED,  # INIT_MANGO_ACCOUNT,
     2: DEPOSIT,  # DEPOSIT,
     3: WITHDRAW,  # WITHDRAW,
     4: UNSPECIFIED,  # ADD_SPOT_MARKET,
@@ -1541,14 +1772,14 @@ InstructionParsersByVariant = {
     29: UNSPECIFIED,  # SETTLE_FEES,
     30: UNSPECIFIED,  # RESOLVE_PERP_BANKRUPTCY,
     31: UNSPECIFIED,  # RESOLVE_TOKEN_BANKRUPTCY,
-    32: INIT_SPOT_OPEN_ORDERS,  # INIT_SPOT_OPEN_ORDERS,
+    32: UNSPECIFIED,  # INIT_SPOT_OPEN_ORDERS,
     33: REDEEM_MNGO,  # REDEEM_MNGO,
     34: UNSPECIFIED,  # ADD_MANGO_ACCOUNT_INFO,
     35: UNSPECIFIED,  # DEPOSIT_MSRM,
     36: UNSPECIFIED,  # WITHDRAW_MSRM,
     37: UNSPECIFIED,  # CHANGE_PERP_MARKET_PARAMS,
     38: UNSPECIFIED,  # SET_GROUP_ADMIN,
-    39: UNSPECIFIED,  # CANCEL_ALL_PERP_ORDERS,
+    39: CANCEL_ALL_PERP_ORDERS,  # CANCEL_ALL_PERP_ORDERS,
     40: UNSPECIFIED,  # FORCE_SETTLE_QUOTE_POSITIONS,
     41: PLACE_SPOT_ORDER_2,  # PLACE_SPOT_ORDER_2,
     42: UNSPECIFIED,  # INIT_ADVANCED_ORDERS,
@@ -1558,4 +1789,20 @@ InstructionParsersByVariant = {
     46: UNSPECIFIED,  # CREATE_PERP_MARKET,
     47: UNSPECIFIED,  # CHANGE_PERP_MARKET_PARAMS2,
     48: UNSPECIFIED,  # UPDATE_MARGIN_BASKET,
+    49: UNSPECIFIED,  # CHANG_MAX_MANGO_ACCOUNTS,
+    50: CLOSE_MANGO_ACCOUNT,  # CLOSE_MANGO_ACCOUNT,
+    51: UNSPECIFIED,  # CLOSE_SPOT_OPEN_ORDERS,
+    52: UNSPECIFIED,  # CLOSE_ADVANCED_ORDERS,
+    53: UNSPECIFIED,  # CREATE_DUST_ACCOUNT,
+    54: UNSPECIFIED,  # RESOLVE_DUST,
+    55: CREATE_MANGO_ACCOUNT,  # CREATE_MANGO_ACCOUNT,
+    56: UNSPECIFIED,  # UPGRADE_MANGO_ACCOUNT_V0_V1,
+    57: UNSPECIFIED,  # CANCEL_PERP_ORDER_SIDE,
+    58: SET_DELEGATE,  # SET_DELEGATE,
+    59: UNSPECIFIED,  # CHANGE_SPOT_MARKET_PARAMS,
+    60: CREATE_SPOT_OPEN_ORDERS,  # CREATE_SPOT_OPEN_ORDERS,
+    61: UNSPECIFIED,  # CHANGE_REFERRAL_FEE_PARAMS,
+    62: SET_REFERRER_MEMORY,  # SET_REFERRER_MEMORY,
+    63: REGISTER_REFERRER_ID,  # REGISTER_REFERRER_ID,
+    64: PLACE_PERP_ORDER_2,  # PLACE_PERP_ORDER_2,
 }

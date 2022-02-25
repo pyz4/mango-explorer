@@ -17,6 +17,7 @@
 import mango
 import typing
 
+from datetime import timedelta
 from decimal import Decimal
 
 from ..modelstate import ModelState
@@ -41,12 +42,27 @@ from .reconciledorders import ReconciledOrders
 # * ModelState is ignored when matching.
 #
 class ToleranceOrderReconciler(OrderReconciler):
-    def __init__(self, price_tolerance: Decimal, quantity_tolerance: Decimal) -> None:
+    def __init__(
+        self,
+        price_tolerance: Decimal,
+        quantity_tolerance: Decimal,
+        time_in_force_tolerance: timedelta,
+    ) -> None:
         super().__init__()
         self.price_tolerance: Decimal = price_tolerance
         self.quantity_tolerance: Decimal = quantity_tolerance
+        self.time_in_force_tolerance: timedelta = time_in_force_tolerance
 
-    def reconcile(self, _: ModelState, existing_orders: typing.Sequence[mango.Order], desired_orders: typing.Sequence[mango.Order]) -> ReconciledOrders:
+    @staticmethod
+    def zero_tolerance_order_reconciler() -> "ToleranceOrderReconciler":
+        return ToleranceOrderReconciler(Decimal(0), Decimal(0), timedelta(seconds=0))
+
+    def reconcile(
+        self,
+        _: ModelState,
+        existing_orders: typing.Sequence[mango.Order],
+        desired_orders: typing.Sequence[mango.Order],
+    ) -> ReconciledOrders:
         remaining_existing_orders: typing.List[mango.Order] = list(existing_orders)
         outcomes: ReconciledOrders = ReconciledOrders()
         for desired in desired_orders:
@@ -63,14 +79,22 @@ class ToleranceOrderReconciler(OrderReconciler):
         outcomes.to_cancel = remaining_existing_orders
 
         in_count = len(existing_orders) + len(desired_orders)
-        out_count = len(outcomes.to_place) + len(outcomes.to_cancel) + len(outcomes.to_keep) + len(outcomes.to_ignore)
+        out_count = (
+            len(outcomes.to_place)
+            + len(outcomes.to_cancel)
+            + len(outcomes.to_keep)
+            + len(outcomes.to_ignore)
+        )
         if in_count != out_count:
             raise Exception(
-                f"Failure processing all desired orders. Count of orders in: {in_count}. Count of orders out: {out_count}.")
+                f"Failure processing all desired orders. Count of orders in: {in_count}. Count of orders out: {out_count}."
+            )
 
         return outcomes
 
-    def find_acceptable_order(self, desired: mango.Order, existing_orders: typing.Sequence[mango.Order]) -> typing.Optional[mango.Order]:
+    def find_acceptable_order(
+        self, desired: mango.Order, existing_orders: typing.Sequence[mango.Order]
+    ) -> typing.Optional[mango.Order]:
         for existing in existing_orders:
             if self.is_within_tolderance(existing, desired):
                 return existing
@@ -94,7 +118,13 @@ class ToleranceOrderReconciler(OrderReconciler):
         if desired.quantity < (existing.quantity - quantity_tolerance):
             return False
 
+        if desired.expiration > (existing.expiration + self.time_in_force_tolerance):
+            return False
+
+        if desired.expiration < (existing.expiration - self.time_in_force_tolerance):
+            return False
+
         return True
 
     def __str__(self) -> str:
-        return f"« ToleranceOrderReconciler [price tolerance: {self.price_tolerance}, quantity tolerance: {self.quantity_tolerance}] »"
+        return f"« ToleranceOrderReconciler [price tolerance: {self.price_tolerance}, quantity tolerance: {self.quantity_tolerance}, time-in-force tolerance: {self.time_in_force_tolerance}] »"

@@ -20,6 +20,7 @@ import json
 import os.path
 import typing
 
+from dataclasses import dataclass
 from solana.publickey import PublicKey
 
 
@@ -53,21 +54,14 @@ SOL_DECIMALS = decimal.Decimal(9)
 #
 # The divisor to use to turn an integer value of SOLs from an account's `balance` into a value with the correct number of decimal places.
 #
-SOL_DECIMAL_DIVISOR = decimal.Decimal(10 ** SOL_DECIMALS)
+SOL_DECIMAL_DIVISOR = decimal.Decimal(10**SOL_DECIMALS)
 
 
-# ## NUM_TOKENS
+# ## I64_MAX
 #
-# This is currently hard-coded to 3.
-#
-NUM_TOKENS = 3
-
-
-# ## NUM_MARKETS
-#
-# There is one fewer market than tokens.
-#
-NUM_MARKETS = NUM_TOKENS - 1
+# This is to match the mango-client-v3 behaviour:
+# export const I64_MAX_BN = new BN('9223372036854775807').toTwos(64);
+I64_MAX = decimal.Decimal("9223372036854775807")
 
 
 # # WARNING_DISCLAIMER_TEXT
@@ -99,21 +93,31 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 # This function provides a consistent way to determine the correct data path for use throughout `mango-explorer`.
 #
 def _build_data_path() -> str:
-    possibilities: typing.Sequence[str] = ["../data", "data", ".", "../../data", "../../../data"]
+    possibilities: typing.Sequence[str] = [
+        "../data",
+        "data",
+        ".",
+        "../../data",
+        "../../../data",
+    ]
     attempts: typing.List[str] = []
     file_root: str = os.path.dirname(__file__)
     for possibility in possibilities:
         data_path: str = os.path.normpath(os.path.join(file_root, possibility))
         attempts += [data_path]
         try:
-            attempted_ids_path: str = os.path.normpath(os.path.join(data_path, "ids.json"))
+            attempted_ids_path: str = os.path.normpath(
+                os.path.join(data_path, "ids.json")
+            )
             with open(attempted_ids_path) as ids_file:
                 json.load(ids_file)
                 return data_path
         except:
             pass
 
-    raise Exception(f"Could not determine data path - ids.json not found in: {attempts}")
+    raise Exception(
+        f"Could not determine data path - ids.json not found in: {attempts}"
+    )
 
 
 # # DATA_PATH
@@ -135,7 +139,8 @@ with open(os.path.join(DATA_PATH, "ids.json")) as json_file:
 #
 # Runtime details of the current version of mango-explorer.
 #
-class PackageVersion(typing.NamedTuple):
+@dataclass
+class PackageVersion:
     version: str
     last_commit: str
 
@@ -148,7 +153,8 @@ class PackageVersion(typing.NamedTuple):
 
 def version() -> PackageVersion:
     package_version: str = "Unknown"
-    try:
+    # The exception is deliberately trapped and ignored - we just want to return "Unknown" in that situation.
+    try:  # nosemgrep
         package_version = importlib.metadata.version("mango-explorer")
     except Exception:
         pass

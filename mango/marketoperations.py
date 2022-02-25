@@ -21,12 +21,12 @@ import typing
 from decimal import Decimal
 from solana.publickey import PublicKey
 
-from mango.lotsizeconverter import NullLotSizeConverter
-
 from .combinableinstructions import CombinableInstructions
 from .constants import SYSTEM_PROGRAM_ADDRESS
-from .market import Market, DryRunMarket
-from .orders import Order, OrderBook
+from .loadedmarket import LoadedMarket
+from .lotsizeconverter import NullLotSizeConverter
+from .markets import InventorySource
+from .orders import Order, OrderBook, OrderType, Side
 
 
 # # 🥭 MarketOperations
@@ -62,29 +62,38 @@ class MarketInstructionBuilder(metaclass=abc.ABCMeta):
         self._logger: logging.Logger = logging.getLogger(self.__class__.__name__)
 
     @abc.abstractmethod
-    def build_cancel_order_instructions(self, order: Order, ok_if_missing: bool = False) -> CombinableInstructions:
+    def build_cancel_order_instructions(
+        self, order: Order, ok_if_missing: bool = False
+    ) -> CombinableInstructions:
         raise NotImplementedError(
-            "MarketInstructionBuilder.build_cancel_order_instructions() is not implemented on the base type.")
+            "MarketInstructionBuilder.build_cancel_order_instructions() is not implemented on the base type."
+        )
 
     @abc.abstractmethod
     def build_place_order_instructions(self, order: Order) -> CombinableInstructions:
         raise NotImplementedError(
-            "MarketInstructionBuilder.build_place_order_instructions() is not implemented on the base type.")
+            "MarketInstructionBuilder.build_place_order_instructions() is not implemented on the base type."
+        )
 
     @abc.abstractmethod
     def build_settle_instructions(self) -> CombinableInstructions:
         raise NotImplementedError(
-            "MarketInstructionBuilder.build_settle_instructions() is not implemented on the base type.")
+            "MarketInstructionBuilder.build_settle_instructions() is not implemented on the base type."
+        )
 
     @abc.abstractmethod
-    def build_crank_instructions(self, open_orders_addresses: typing.Sequence[PublicKey], limit: Decimal = Decimal(32)) -> CombinableInstructions:
+    def build_crank_instructions(
+        self, addresses: typing.Sequence[PublicKey], limit: Decimal = Decimal(32)
+    ) -> CombinableInstructions:
         raise NotImplementedError(
-            "MarketInstructionBuilder.build_crank_instructions() is not implemented on the base type.")
+            "MarketInstructionBuilder.build_crank_instructions() is not implemented on the base type."
+        )
 
     @abc.abstractmethod
     def build_redeem_instructions(self) -> CombinableInstructions:
         raise NotImplementedError(
-            "MarketInstructionBuilder.build_redeem_instructions() is not implemented on the base type.")
+            "MarketInstructionBuilder.build_redeem_instructions() is not implemented on the base type."
+        )
 
     def __repr__(self) -> str:
         return f"{self}"
@@ -105,41 +114,101 @@ class MarketInstructionBuilder(metaclass=abc.ABCMeta):
 # ```
 #
 class MarketOperations(metaclass=abc.ABCMeta):
-    def __init__(self, market: Market) -> None:
+    def __init__(self, market: LoadedMarket) -> None:
         self._logger: logging.Logger = logging.getLogger(self.__class__.__name__)
-        self.market: Market = market
+        self.market: LoadedMarket = market
+
+    @property
+    def symbol(self) -> str:
+        return self.market.symbol
+
+    @property
+    def inventory_source(self) -> InventorySource:
+        return self.market.inventory_source
 
     @abc.abstractmethod
-    def cancel_order(self, order: Order, ok_if_missing: bool = False) -> typing.Sequence[str]:
-        raise NotImplementedError("MarketOperations.cancel_order() is not implemented on the base type.")
+    def cancel_order(
+        self, order: Order, ok_if_missing: bool = False
+    ) -> typing.Sequence[str]:
+        raise NotImplementedError(
+            "MarketOperations.cancel_order() is not implemented on the base type."
+        )
 
     @abc.abstractmethod
-    def place_order(self, order: Order) -> Order:
-        raise NotImplementedError("MarketOperations.place_order() is not implemented on the base type.")
+    def place_order(
+        self, order: Order, crank_limit: Decimal = Decimal(5)
+    ) -> typing.Sequence[str]:
+        raise NotImplementedError(
+            "MarketOperations.place_order() is not implemented on the base type."
+        )
 
     @abc.abstractmethod
     def load_orderbook(self) -> OrderBook:
-        raise NotImplementedError("MarketOperations.load_orders() is not implemented on the base type.")
+        raise NotImplementedError(
+            "MarketOperations.load_orders() is not implemented on the base type."
+        )
 
     @abc.abstractmethod
-    def load_my_orders(self) -> typing.Sequence[Order]:
-        raise NotImplementedError("MarketOperations.load_my_orders() is not implemented on the base type.")
+    def load_my_orders(self, include_expired: bool = False) -> typing.Sequence[Order]:
+        raise NotImplementedError(
+            "MarketOperations.load_my_orders() is not implemented on the base type."
+        )
 
     @abc.abstractmethod
     def settle(self) -> typing.Sequence[str]:
-        raise NotImplementedError("MarketOperations.settle() is not implemented on the base type.")
+        raise NotImplementedError(
+            "MarketOperations.settle() is not implemented on the base type."
+        )
 
     @abc.abstractmethod
     def crank(self, limit: Decimal = Decimal(32)) -> typing.Sequence[str]:
-        raise NotImplementedError("MarketOperations.crank() is not implemented on the base type.")
+        raise NotImplementedError(
+            "MarketOperations.crank() is not implemented on the base type."
+        )
 
     @abc.abstractmethod
     def create_openorders(self) -> PublicKey:
-        raise NotImplementedError("MarketOperations.create_openorders() is not implemented on the base type.")
+        raise NotImplementedError(
+            "MarketOperations.create_openorders() is not implemented on the base type."
+        )
 
     @abc.abstractmethod
     def ensure_openorders(self) -> PublicKey:
-        raise NotImplementedError("MarketOperations.ensure_openorders() is not implemented on the base type.")
+        raise NotImplementedError(
+            "MarketOperations.ensure_openorders() is not implemented on the base type."
+        )
+
+    def market_buy(
+        self, quantity: Decimal, max_slippage: Decimal
+    ) -> typing.Sequence[str]:
+        orderbook = self.load_orderbook()
+        if orderbook.top_ask is None:
+            raise Exception(f"Could not determine top ask on {orderbook.symbol}")
+
+        top_ask = orderbook.top_ask.price
+
+        increase_factor = Decimal(1) + max_slippage
+        price = top_ask * increase_factor
+        self._logger.info(f"Price {price} - adjusted by {max_slippage} from {top_ask}")
+
+        order = Order.from_values(Side.BUY, price, quantity, OrderType.IOC)
+        return self.place_order(order)
+
+    def market_sell(
+        self, quantity: Decimal, max_slippage: Decimal
+    ) -> typing.Sequence[str]:
+        orderbook = self.load_orderbook()
+        if orderbook.top_bid is None:
+            raise Exception(f"Could not determine top bid on {orderbook.symbol}")
+
+        top_bid = orderbook.top_bid.price
+
+        decrease_factor = Decimal(1) - max_slippage
+        price = top_bid * decrease_factor
+        self._logger.info(f"Price {price} - adjusted by {max_slippage} from {top_bid}")
+
+        order = Order.from_values(Side.SELL, price, quantity, OrderType.IOC)
+        return self.place_order(order)
 
     def __repr__(self) -> str:
         return f"{self}"
@@ -155,7 +224,9 @@ class NullMarketInstructionBuilder(MarketInstructionBuilder):
         super().__init__()
         self.symbol: str = symbol
 
-    def build_cancel_order_instructions(self, order: Order, ok_if_missing: bool = False) -> CombinableInstructions:
+    def build_cancel_order_instructions(
+        self, order: Order, ok_if_missing: bool = False
+    ) -> CombinableInstructions:
         return CombinableInstructions.empty()
 
     def build_place_order_instructions(self, order: Order) -> CombinableInstructions:
@@ -164,7 +235,9 @@ class NullMarketInstructionBuilder(MarketInstructionBuilder):
     def build_settle_instructions(self) -> CombinableInstructions:
         return CombinableInstructions.empty()
 
-    def build_crank_instructions(self, addresses_to_crank: typing.Sequence[PublicKey], limit: Decimal = Decimal(32)) -> CombinableInstructions:
+    def build_crank_instructions(
+        self, addresses: typing.Sequence[PublicKey], limit: Decimal = Decimal(32)
+    ) -> CombinableInstructions:
         return CombinableInstructions.empty()
 
     def build_redeem_instructions(self) -> CombinableInstructions:
@@ -180,22 +253,25 @@ class NullMarketInstructionBuilder(MarketInstructionBuilder):
 # is expected, but which will not actually trade.
 #
 class NullMarketOperations(MarketOperations):
-    def __init__(self, market_name: str) -> None:
-        super().__init__(DryRunMarket(market_name))
-        self.market_name: str = market_name
+    def __init__(self, market: LoadedMarket) -> None:
+        super().__init__(market)
 
-    def cancel_order(self, order: Order, ok_if_missing: bool = False) -> typing.Sequence[str]:
+    def cancel_order(
+        self, order: Order, ok_if_missing: bool = False
+    ) -> typing.Sequence[str]:
         self._logger.info(f"[Dry Run] Not cancelling order {order}.")
         return [""]
 
-    def place_order(self, order: Order) -> Order:
+    def place_order(
+        self, order: Order, crank_limit: Decimal = Decimal(5)
+    ) -> typing.Sequence[str]:
         self._logger.info(f"[Dry Run] Not placing order {order}.")
-        return order
+        return []
 
     def load_orderbook(self) -> OrderBook:
-        return OrderBook(self.market_name, NullLotSizeConverter(), [], [])
+        return OrderBook(self.market.symbol, NullLotSizeConverter(), [], [])
 
-    def load_my_orders(self) -> typing.Sequence[Order]:
+    def load_my_orders(self, include_expired: bool = False) -> typing.Sequence[Order]:
         return []
 
     def settle(self) -> typing.Sequence[str]:
@@ -211,4 +287,4 @@ class NullMarketOperations(MarketOperations):
         return SYSTEM_PROGRAM_ADDRESS
 
     def __str__(self) -> str:
-        return f"""« NullMarketOperations [{self.market_name}] »"""
+        return f"""« NullMarketOperations [{self.market.symbol}] »"""

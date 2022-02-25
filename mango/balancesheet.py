@@ -19,13 +19,20 @@ import typing
 
 from decimal import Decimal
 
-from .token import Token
+from .output import output
+from .tokens import Token
 
 
 # # 🥭 BalanceSheet class
 #
 class BalanceSheet:
-    def __init__(self, token: Token, liabilities: Decimal, settled_assets: Decimal, unsettled_assets: Decimal) -> None:
+    def __init__(
+        self,
+        token: Token,
+        liabilities: Decimal,
+        settled_assets: Decimal,
+        unsettled_assets: Decimal,
+    ) -> None:
         self._logger: logging.Logger = logging.getLogger(self.__class__.__name__)
         self.token: Token = token
         self.liabilities: Decimal = liabilities
@@ -47,7 +54,10 @@ class BalanceSheet:
         return self.assets / self.liabilities
 
     @staticmethod
-    def report(values: typing.Sequence["BalanceSheet"], reporter: typing.Callable[[str], None] = print) -> None:
+    def report(
+        values: typing.Sequence["BalanceSheet"],
+        reporter: typing.Callable[[str], None] = output,
+    ) -> None:
         for value in values:
             reporter(str(value))
 

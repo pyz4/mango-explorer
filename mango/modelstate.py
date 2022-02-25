@@ -23,11 +23,32 @@ from solana.publickey import PublicKey
 from .account import Account
 from .group import Group
 from .inventory import Inventory
-from .market import Market
+from .markets import Market
 from .oracle import Price
 from .orders import Order, OrderBook
 from .placedorder import PlacedOrdersContainer
 from .watcher import Watcher
+
+
+# # 🥭 EventQueue protocol
+#
+# The `EventQueue` protocol just says the object has a property `accounts_to_crank` that returns a `Sequence` of `PublicKey`s.
+#
+# This is to share the interface between a `SerumEventQueue` and a `PerpEventQueue` for cranking, when the
+# underlying objects are really quite different.
+#
+class EventQueue(typing.Protocol):
+    @property
+    def accounts_to_crank(self) -> typing.Sequence[PublicKey]:
+        raise NotImplementedError(
+            "EventQueue.accounts_to_crank is not implemented on the Protocol."
+        )
+
+
+class NullEventQueue:
+    @property
+    def accounts_to_crank(self) -> typing.Sequence[PublicKey]:
+        return []
 
 
 # # 🥭 ModelState class
@@ -35,16 +56,18 @@ from .watcher import Watcher
 # Provides simple access to the latest state of market and account data.
 #
 class ModelState:
-    def __init__(self,
-                 order_owner: PublicKey,
-                 market: Market,
-                 group_watcher: Watcher[Group],
-                 account_watcher: Watcher[Account],
-                 price_watcher: Watcher[Price],
-                 placed_orders_container_watcher: Watcher[PlacedOrdersContainer],
-                 inventory_watcher: Watcher[Inventory],
-                 orderbook: Watcher[OrderBook]
-                 ) -> None:
+    def __init__(
+        self,
+        order_owner: PublicKey,
+        market: Market,
+        group_watcher: Watcher[Group],
+        account_watcher: Watcher[Account],
+        price_watcher: Watcher[Price],
+        placed_orders_container_watcher: Watcher[PlacedOrdersContainer],
+        inventory_watcher: Watcher[Inventory],
+        orderbook: Watcher[OrderBook],
+        event_queue: Watcher[EventQueue],
+    ) -> None:
         self._logger: logging.Logger = logging.getLogger(self.__class__.__name__)
         self.order_owner: PublicKey = order_owner
         self.market: Market = market
@@ -52,9 +75,11 @@ class ModelState:
         self.account_watcher: Watcher[Account] = account_watcher
         self.price_watcher: Watcher[Price] = price_watcher
         self.placed_orders_container_watcher: Watcher[
-            PlacedOrdersContainer] = placed_orders_container_watcher
+            PlacedOrdersContainer
+        ] = placed_orders_container_watcher
         self.inventory_watcher: Watcher[Inventory] = inventory_watcher
         self.orderbook_watcher: Watcher[OrderBook] = orderbook
+        self.event_queue_watcher: Watcher[EventQueue] = event_queue
 
         self.not_quoting: bool = False
         self.state: typing.Dict[str, typing.Any] = {}
@@ -105,10 +130,14 @@ class ModelState:
     def spread(self) -> Decimal:
         return self.orderbook.spread
 
+    @property
+    def accounts_to_crank(self) -> typing.Sequence[PublicKey]:
+        return self.event_queue_watcher.latest.accounts_to_crank
+
     def current_orders(self) -> typing.Sequence[Order]:
-        self.orderbook
-        all_orders = [*self.bids, *self.asks]
-        return list([o for o in all_orders if o.owner == self.order_owner])
+        return self.orderbook.all_orders_for_owner(
+            self.order_owner, include_expired=True
+        )
 
     def __str__(self) -> str:
         return f"""« ModelState for market '{self.market.symbol}'

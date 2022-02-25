@@ -16,6 +16,7 @@
 
 import typing
 
+from dataclasses import dataclass
 from decimal import Decimal
 
 from .orders import Side
@@ -29,13 +30,19 @@ from .orders import Side
 # The information is usually split across 3 collections - 'is bid', 'orders' and 'client ID's. That can be a
 # little awkward to use, so this tuple packages it all together, per order.
 #
-class PlacedOrder(typing.NamedTuple):
+@dataclass
+class PlacedOrder:
     id: int
     client_id: int
     side: Side
 
     @staticmethod
-    def build_from_open_orders_data(free_slot_bits: Decimal, is_bid_bits: Decimal, order_ids: typing.Sequence[Decimal], client_order_ids: typing.Sequence[Decimal]) -> typing.Sequence["PlacedOrder"]:
+    def build_from_open_orders_data(
+        free_slot_bits: Decimal,
+        is_bid_bits: Decimal,
+        order_ids: typing.Sequence[Decimal],
+        client_order_ids: typing.Sequence[Decimal],
+    ) -> typing.Sequence["PlacedOrder"]:
         int_free_slot_bits = int(free_slot_bits)
         int_is_bid_bits = int(is_bid_bits)
         placed_orders: typing.List[PlacedOrder] = []
@@ -44,7 +51,9 @@ class PlacedOrder(typing.NamedTuple):
                 order_id = int(order_ids[index])
                 client_id = int(client_order_ids[index])
                 side = Side.BUY if int_is_bid_bits & (1 << index) else Side.SELL
-                placed_orders += [PlacedOrder(id=order_id, client_id=client_id, side=side)]
+                placed_orders += [
+                    PlacedOrder(id=order_id, client_id=client_id, side=side)
+                ]
         return placed_orders
 
     def __repr__(self) -> str:

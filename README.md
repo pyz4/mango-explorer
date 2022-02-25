@@ -20,7 +20,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 pip install mango-explorer
 ```
 
-(Other ways of installing it or adding it as a dependency are available and will depend on the particular tools you are using.)
+A simple [installation walkthrough](docs/Installation.md) is available, and of course other ways of installing it or adding it as a dependency are possible and will depend on the particular tools you are using.
 
 `mango-explorer` is also available as a docker container with the name [opinionatedgeek/mango-explorer-v3](https://hub.docker.com/repository/docker/opinionatedgeek/mango-explorer-v3/).
 
@@ -53,20 +53,17 @@ group = mango.Group.load(context)
 accounts = mango.Account.load_all_for_owner(context, wallet.address, group)
 account = accounts[0]
 
-# Load the market
-stub = context.market_lookup.find_by_symbol("SOL-PERP")
-market = mango.ensure_market_loaded(context, stub)
-
-market_operations = mango.create_market_operations(context, wallet, account, market, dry_run=False)
+# Load the market operations
+market_operations = mango.operations(context, wallet, account, "SOL-PERP", dry_run=False)
 
 print("Initial order book:\n\t", market_operations.load_orderbook())
-print("Your current orders:\n\t", market_operations.load_my_orders())
+print("Your current orders:\n\t", market_operations.load_my_orders(include_expired=True))
 
 # Go on - try to buy 1 SOL-PERP contract for $10.
-order = mango.Order.from_basic_info(side=mango.Side.BUY,
-                                    price=decimal.Decimal(10),
-                                    quantity=decimal.Decimal(1),
-                                    order_type=mango.OrderType.POST_ONLY)
+order = mango.Order.from_values(side=mango.Side.BUY,
+                                price=decimal.Decimal(10),
+                                quantity=decimal.Decimal(1),
+                                order_type=mango.OrderType.POST_ONLY)
 placed_order = market_operations.place_order(order)
 print("\n\nPlaced order:\n\t", placed_order)
 
@@ -74,7 +71,7 @@ print("\n\nSleeping for 10 seconds...")
 time.sleep(10)
 
 print("\n\nOrder book (including our new order):\n", market_operations.load_orderbook())
-print("Your current orders:\n\t", market_operations.load_my_orders())
+print("Your current orders:\n\t", market_operations.load_my_orders(include_expired=True))
 
 cancellation_signatures = market_operations.cancel_order(placed_order)
 print("\n\nCancellation signature:\n\t", cancellation_signatures)
@@ -83,7 +80,7 @@ print("\n\nSleeping for 10 seconds...")
 time.sleep(10)
 
 print("\n\nOrder book (without our order):\n", market_operations.load_orderbook())
-print("Your current orders:\n\t", market_operations.load_my_orders())
+print("Your current orders:\n\t", market_operations.load_my_orders(include_expired=True))
 
 ```
 

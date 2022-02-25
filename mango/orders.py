@@ -19,11 +19,14 @@ import pandas
 import pyserum.enums
 import typing
 
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from pyserum.market.types import Order as PySerumOrder
 from solana.publickey import PublicKey
 
 from .constants import SYSTEM_PROGRAM_ADDRESS
+from .datetimes import utc_now
 from .lotsizeconverter import LotSizeConverter
 
 
@@ -139,7 +142,12 @@ class OrderType(enum.Enum):
 #
 # A package that encapsulates common information about an order.
 #
-class Order(typing.NamedTuple):
+@dataclass(frozen=True)
+class Order:
+    DefaultMatchLimit: typing.ClassVar[int] = 20
+    NoExpiration: typing.ClassVar[datetime] = datetime.fromtimestamp(0).astimezone(
+        timezone.utc
+    )
     id: int
     client_id: int
     owner: PublicKey
@@ -147,63 +155,135 @@ class Order(typing.NamedTuple):
     price: Decimal
     quantity: Decimal
     order_type: OrderType
+    reduce_only: bool = False
+    expiration: datetime = NoExpiration
+    match_limit: int = DefaultMatchLimit
 
     @staticmethod
     def read_sequence_number(id: int) -> Decimal:
         id_bytes = id.to_bytes(16, byteorder="little", signed=False)
         low_order = id_bytes[:8]
-        return Decimal(int.from_bytes(low_order, 'little', signed=False))
+        return Decimal(int.from_bytes(low_order, "little", signed=False))
 
     @staticmethod
     def read_price(id: int) -> Decimal:
         id_bytes = id.to_bytes(16, byteorder="little", signed=False)
         high_order = id_bytes[8:]
-        return Decimal(int.from_bytes(high_order, 'little', signed=False))
+        return Decimal(int.from_bytes(high_order, "little", signed=False))
 
-    # Returns an identical order with the ID changed.
-    def with_id(self, id: int) -> "Order":
-        return Order(id=id, side=self.side, price=self.price, quantity=self.quantity,
-                     client_id=self.client_id, owner=self.owner, order_type=self.order_type)
+    @property
+    def expired(self) -> bool:
+        if (self.expiration == Order.NoExpiration) or (self.expiration > utc_now()):
+            return False
+        return True
 
-    # Returns an identical order with the Client ID changed.
-    def with_client_id(self, client_id: int) -> "Order":
-        return Order(id=self.id, side=self.side, price=self.price, quantity=self.quantity,
-                     client_id=client_id, owner=self.owner, order_type=self.order_type)
+    @property
+    def _emoji_marker(self) -> str:
+        if self.expired:
+            return "⛔"
+        elif self.expiration != Order.NoExpiration:
+            return "⏰"
+        return "📌"
 
-    # Returns an identical order with the price changed.
-    def with_price(self, price: Decimal) -> "Order":
-        return Order(id=self.id, side=self.side, price=price, quantity=self.quantity,
-                     client_id=self.client_id, owner=self.owner, order_type=self.order_type)
-
-    # Returns an identical order with the quantity changed.
-    def with_quantity(self, quantity: Decimal) -> "Order":
-        return Order(id=self.id, side=self.side, price=self.price, quantity=quantity,
-                     client_id=self.client_id, owner=self.owner, order_type=self.order_type)
-
-    # Returns an identical order with the owner changed.
-    def with_owner(self, owner: PublicKey) -> "Order":
-        return Order(id=self.id, side=self.side, price=self.price, quantity=self.quantity,
-                     client_id=self.client_id, owner=owner, order_type=self.order_type)
+    # Returns an identical order with the provided values changed.
+    def with_update(
+        self,
+        id: typing.Optional[int] = None,
+        client_id: typing.Optional[int] = None,
+        owner: typing.Optional[PublicKey] = None,
+        side: typing.Optional[Side] = None,
+        price: typing.Optional[Decimal] = None,
+        quantity: typing.Optional[Decimal] = None,
+        order_type: typing.Optional[OrderType] = None,
+        reduce_only: typing.Optional[bool] = None,
+        expiration: typing.Optional[datetime] = None,
+        match_limit: typing.Optional[int] = None,
+    ) -> "Order":
+        return Order(
+            id=id if id is not None else self.id,
+            client_id=client_id if client_id is not None else self.client_id,
+            owner=owner if owner is not None else self.owner,
+            side=side if side is not None else self.side,
+            price=price if price is not None else self.price,
+            quantity=quantity if quantity is not None else self.quantity,
+            order_type=order_type if order_type is not None else self.order_type,
+            reduce_only=reduce_only if reduce_only is not None else self.reduce_only,
+            expiration=expiration if expiration is not None else self.expiration,
+            match_limit=match_limit if match_limit is not None else self.match_limit,
+        )
 
     @staticmethod
     def from_serum_order(serum_order: PySerumOrder) -> "Order":
         price = Decimal(serum_order.info.price)
         quantity = Decimal(serum_order.info.size)
         side = Side.from_value(serum_order.side)
-        order = Order(id=serum_order.order_id, side=side, price=price, quantity=quantity,
-                      client_id=serum_order.client_id, owner=serum_order.open_order_address,
-                      order_type=OrderType.UNKNOWN)
+        order = Order(
+            id=serum_order.order_id,
+            side=side,
+            price=price,
+            quantity=quantity,
+            client_id=serum_order.client_id,
+            owner=serum_order.open_order_address,
+            order_type=OrderType.UNKNOWN,
+        )
         return order
 
     @staticmethod
-    def from_basic_info(side: Side, price: Decimal, quantity: Decimal, order_type: OrderType = OrderType.UNKNOWN) -> "Order":
-        order = Order(id=0, side=side, price=price, quantity=quantity, client_id=0,
-                      owner=SYSTEM_PROGRAM_ADDRESS, order_type=order_type)
+    def from_values(
+        side: Side,
+        price: Decimal,
+        quantity: Decimal,
+        order_type: OrderType = OrderType.UNKNOWN,
+        id: int = 0,
+        client_id: int = 0,
+        owner: PublicKey = SYSTEM_PROGRAM_ADDRESS,
+        reduce_only: bool = False,
+        expiration: datetime = NoExpiration,
+        match_limit: int = 20,
+    ) -> "Order":
+        order = Order(
+            id=id,
+            side=side,
+            price=price,
+            quantity=quantity,
+            client_id=client_id,
+            owner=owner,
+            order_type=order_type,
+            reduce_only=reduce_only,
+            expiration=expiration,
+            match_limit=match_limit,
+        )
         return order
 
     @staticmethod
-    def from_ids(id: int, client_id: int, side: Side = Side.BUY, price: Decimal = Decimal(0), quantity: Decimal = Decimal(0)) -> "Order":
-        return Order(id=id, client_id=client_id, owner=SYSTEM_PROGRAM_ADDRESS, side=side, price=price, quantity=quantity, order_type=OrderType.UNKNOWN)
+    def from_ids(
+        id: int,
+        client_id: int,
+        side: Side = Side.BUY,
+        price: Decimal = Decimal(0),
+        quantity: Decimal = Decimal(0),
+    ) -> "Order":
+        return Order(
+            id=id,
+            client_id=client_id,
+            owner=SYSTEM_PROGRAM_ADDRESS,
+            side=side,
+            price=price,
+            quantity=quantity,
+            order_type=OrderType.UNKNOWN,
+            reduce_only=False,
+            expiration=Order.NoExpiration,
+            match_limit=20,
+        )
+
+    @staticmethod
+    def build_absolute_expiration(
+        expire_seconds: typing.Optional[Decimal],
+    ) -> datetime:
+        if expire_seconds is None or expire_seconds <= Decimal(0):
+            return Order.NoExpiration
+
+        return utc_now() + timedelta(seconds=float(expire_seconds))
 
     def __str__(self) -> str:
         owner: str = ""
@@ -212,14 +292,21 @@ class Order(typing.NamedTuple):
         order_type: str = ""
         if self.order_type != OrderType.UNKNOWN:
             order_type = f" {self.order_type}"
-        return f"« Order {owner}{self.side} for {self.quantity:,.8f} at {self.price:.8f} [ID: {self.id} / {self.client_id}]{order_type} »"
+        marker = self._emoji_marker
+        return f"« Order {marker} {owner}{self.side} for {self.quantity:,.8f} at {self.price:.8f} [ID: {self.id} / {self.client_id}]{order_type}{' reduceOnly' if self.reduce_only else ''} »"
 
     def __repr__(self) -> str:
         return f"{self}"
 
 
 class OrderBook:
-    def __init__(self, symbol: str, lot_size_converter: LotSizeConverter, bids: typing.Sequence[Order], asks: typing.Sequence[Order]) -> None:
+    def __init__(
+        self,
+        symbol: str,
+        lot_size_converter: LotSizeConverter,
+        bids: typing.Sequence[Order],
+        asks: typing.Sequence[Order],
+    ) -> None:
         self.symbol: str = symbol
         self.__lot_size_converter: LotSizeConverter = lot_size_converter
         self.__bids: typing.Sequence[Order] = []
@@ -229,51 +316,63 @@ class OrderBook:
 
     @property
     def bids(self) -> typing.Sequence[Order]:
-        return self.__bids
+        return list([o for o in self.__bids if not o.expired])
 
     @bids.setter
     def bids(self, bids: typing.Sequence[Order]) -> None:
-        """ Sort bids high to low, so best bid is at index 0 """
+        """Sort bids high to low, so best bid is at index 0"""
         bids_list: typing.List[Order] = list(bids)
         bids_list.sort(key=lambda order: order.id, reverse=True)
         self.__bids = bids_list
 
     @property
+    def bids_including_expired(self) -> typing.Sequence[Order]:
+        return self.__bids
+
+    @property
     def asks(self) -> typing.Sequence[Order]:
-        return self.__asks
+        return list([o for o in self.__asks if not o.expired])
 
     @asks.setter
     def asks(self, asks: typing.Sequence[Order]) -> None:
-        """ Sets asks low to high, so best ask is at index 0"""
+        """Sets asks low to high, so best ask is at index 0"""
         asks_list: typing.List[Order] = list(asks)
         asks_list.sort(key=lambda order: order.id)
         self.__asks = asks_list
 
+    @property
+    def asks_including_expired(self) -> typing.Sequence[Order]:
+        return self.__asks
+
     # The top bid is the highest price someone is willing to pay to BUY
     @property
     def top_bid(self) -> typing.Optional[Order]:
-        if self.bids and len(self.bids) > 0:
+        bids = self.bids
+        if bids and len(bids) > 0:
             # Top-of-book is always at index 0 for us.
-            return self.bids[0]
+            return bids[0]
         return None
 
     # The top ask is the lowest price someone is willing to pay to SELL
     @property
     def top_ask(self) -> typing.Optional[Order]:
-        if self.asks and len(self.asks) > 0:
+        asks = self.asks
+        if asks and len(asks) > 0:
             # Top-of-book is always at index 0 for us.
-            return self.asks[0]
+            return asks[0]
         return None
 
     # The mid price is halfway between the best bid and best ask.
     @property
     def mid_price(self) -> typing.Optional[Decimal]:
-        if self.top_bid is not None and self.top_ask is not None:
-            return (self.top_bid.price + self.top_ask.price) / 2
-        elif self.top_bid is not None:
-            return self.top_bid.price
-        elif self.top_ask is not None:
-            return self.top_ask.price
+        top_bid = self.top_bid
+        top_ask = self.top_ask
+        if top_bid is not None and top_ask is not None:
+            return (top_bid.price + top_ask.price) / 2
+        elif top_bid is not None:
+            return top_bid.price
+        elif top_ask is not None:
+            return top_ask.price
         return None
 
     @property
@@ -285,6 +384,18 @@ class OrderBook:
         else:
             return top_ask.price - top_bid.price
 
+    def all_orders(self, include_expired: bool = False) -> typing.Sequence[Order]:
+        if include_expired:
+            return [*self.__bids, *self.__asks]
+        return [*self.bids, *self.asks]
+
+    def all_orders_for_owner(
+        self, owner_address: PublicKey, include_expired: bool = False
+    ) -> typing.Sequence[Order]:
+        return list(
+            [o for o in self.all_orders(include_expired) if o.owner == owner_address]
+        )
+
     def to_dataframe(self) -> pandas.DataFrame:
         column_mapper = {
             "id": "Id",
@@ -292,14 +403,17 @@ class OrderBook:
             "owner": "Owner",
             "side": "Side",
             "price": "Price",
-            "quantity": "Quantity"
+            "quantity": "Quantity",
+            "expiration": "Expiration",
         }
 
         frame: pandas.DataFrame = pandas.DataFrame([*reversed(self.bids), *self.asks])
         frame = frame.drop(["order_type"], axis=1)
         frame = frame.rename(mapper=column_mapper, axis=1, copy=True)
         frame["Price"] = pandas.to_numeric(frame["Price"])
-        frame["QuantityLots"] = frame["Quantity"].apply(self.__lot_size_converter.base_size_number_to_lots)
+        frame["QuantityLots"] = frame["Quantity"].apply(
+            self.__lot_size_converter.base_size_number_to_lots
+        )
         frame["Quantity"] = pandas.to_numeric(frame["Quantity"])
         frame["PriceLots"] = pandas.to_numeric(frame["Id"].apply(Order.read_price))
         frame["SequenceNumber"] = frame["Id"].apply(Order.read_sequence_number)
@@ -316,16 +430,25 @@ class OrderBook:
     def to_l2_dataframe(self) -> pandas.DataFrame:
         frame: pandas.DataFrame = self.to_dataframe()
 
-        return frame.groupby("Price").agg({"PriceLots": "first", "Side": "first", "Quantity": "sum", "QuantityLots": "sum"})
+        return frame.groupby("Price").agg(
+            {
+                "PriceLots": "first",
+                "Side": "first",
+                "Quantity": "sum",
+                "QuantityLots": "sum",
+            }
+        )
 
     def to_l3_dataframe(self) -> pandas.DataFrame:
         return self.to_dataframe()
 
     def __str__(self) -> str:
         def _order_to_str(order: Order) -> str:
+            marker = order._emoji_marker
             quantity = f"{order.quantity:,.8f}"
             price = f"{order.price:,.8f}"
-            return f"{order.side} {quantity:>20} at {price:>20}"
+            return f"{marker} {order.side} {quantity:>20} at {price:>20}"
+
         orders_to_show = 5
         lines = []
         for counter in range(orders_to_show):
@@ -336,7 +459,7 @@ class OrderBook:
         text = "\n\t".join(lines)
         spread_description = "N/A"
         if self.spread != 0 and self.top_bid is not None:
-            spread_percentage = (self.spread / self.top_bid.price)
+            spread_percentage = self.spread / self.top_bid.price
             spread_description = f"{self.spread:,.8f}, {spread_percentage:,.3%}"
         return f"« OrderBook {self.symbol} [spread: {spread_description}]\n\t{text}\n»"
 

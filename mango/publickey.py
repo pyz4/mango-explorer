@@ -39,5 +39,5 @@ def encode_public_key_for_sorting(address: PublicKey) -> typing.List[int]:
         int.from_bytes(raw[0:8], "little"),
         int.from_bytes(raw[8:16], "little"),
         int.from_bytes(raw[16:24], "little"),
-        int.from_bytes(raw[24:32], "little")
+        int.from_bytes(raw[24:32], "little"),
     ]

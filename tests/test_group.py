@@ -3,10 +3,18 @@ import typing
 
 from .context import mango
 from .data import load_group
-from .fakes import fake_account_info, fake_seeded_public_key, fake_token_bank, fake_instrument
+from .fakes import (
+    fake_account_info,
+    fake_context,
+    fake_group,
+    fake_seeded_public_key,
+    fake_token_bank,
+    fake_instrument,
+)
 
 from decimal import Decimal
 from mango.layouts import layouts
+from solana.publickey import PublicKey
 
 
 def test_construction() -> None:
@@ -26,10 +34,36 @@ def test_construction() -> None:
     srm_vault = fake_seeded_public_key("SRM vault")
     msrm_vault = fake_seeded_public_key("MSRM vault")
     fees_vault = fake_seeded_public_key("fees vault")
+    max_mango_accounts = Decimal(50)
+    num_mango_accounts = Decimal(49)
+    referral_surcharge_centibps = Decimal(7)
+    referral_share_centibps = Decimal(8)
+    referral_mngo_required = Decimal(9)
 
-    actual = mango.Group(account_info, mango.Version.V1, name, meta_data, shared_quote_token, in_basket,
-                         slots, signer_nonce, signer_key, admin_key, serum_program_address,
-                         cache_key, valid_interval, insurance_vault, srm_vault, msrm_vault, fees_vault)
+    actual = mango.Group(
+        account_info,
+        mango.Version.V1,
+        name,
+        meta_data,
+        shared_quote_token,
+        in_basket,
+        slots,
+        signer_nonce,
+        signer_key,
+        admin_key,
+        serum_program_address,
+        cache_key,
+        valid_interval,
+        insurance_vault,
+        srm_vault,
+        msrm_vault,
+        fees_vault,
+        max_mango_accounts,
+        num_mango_accounts,
+        referral_surcharge_centibps,
+        referral_share_centibps,
+        referral_mngo_required,
+    )
 
     assert actual is not None
     assert actual.name == name
@@ -48,6 +82,8 @@ def test_construction() -> None:
     assert actual.srm_vault == srm_vault
     assert actual.msrm_vault == msrm_vault
     assert actual.fees_vault == fees_vault
+    assert actual.max_mango_accounts == max_mango_accounts
+    assert actual.num_mango_accounts == num_mango_accounts
 
 
 def test_slot_lookups() -> None:
@@ -65,39 +101,126 @@ def test_slot_lookups() -> None:
     srm_vault = fake_seeded_public_key("SRM vault")
     msrm_vault = fake_seeded_public_key("MSRM vault")
     fees_vault = fake_seeded_public_key("fees vault")
+    max_mango_accounts = Decimal(30)
+    num_mango_accounts = Decimal(4)
+    referral_surcharge_centibps = Decimal(7)
+    referral_share_centibps = Decimal(8)
+    referral_mngo_required = Decimal(9)
 
     # This is the more relevant stuff here.
     shared_quote_token_bank = fake_token_bank("FAKEQUOTE")
     slot1_token_bank = fake_token_bank("slot1")
     mngo_token_bank = fake_token_bank("MNGO")
     slot3_instrument = fake_instrument("slot3")
-    in_basket: typing.Sequence[bool] = [False, True, False, False, True, False, True, False]
-    spot_market1 = mango.GroupSlotSpotMarket(fake_seeded_public_key("spot market 1"),
-                                             Decimal(0), Decimal(0), Decimal(0), Decimal(0))
-    spot_market2 = mango.GroupSlotSpotMarket(fake_seeded_public_key("spot market 2"),
-                                             Decimal(0), Decimal(0), Decimal(0), Decimal(0))
-    perp_market2 = mango.GroupSlotPerpMarket(fake_seeded_public_key("perp market 2"), Decimal(0), Decimal(0),
-                                             Decimal(0), Decimal(0), Decimal(0), Decimal(0), Decimal(0))
-    perp_market3 = mango.GroupSlotPerpMarket(fake_seeded_public_key("perp market 3"), Decimal(0), Decimal(0),
-                                             Decimal(0), Decimal(0), Decimal(0), Decimal(0), Decimal(0))
-    slot1 = mango.GroupSlot(1, slot1_token_bank.token, slot1_token_bank, shared_quote_token_bank, spot_market1,
-                            None, mango.NullLotSizeConverter(), fake_seeded_public_key("oracle 1"))
+    in_basket: typing.Sequence[bool] = [
+        False,
+        True,
+        False,
+        False,
+        True,
+        False,
+        True,
+        False,
+    ]
+    spot_market1 = mango.GroupSlotSpotMarket(
+        fake_seeded_public_key("spot market 1"),
+        Decimal(0),
+        Decimal(0),
+        Decimal(0),
+        Decimal(0),
+    )
+    spot_market2 = mango.GroupSlotSpotMarket(
+        fake_seeded_public_key("spot market 2"),
+        Decimal(0),
+        Decimal(0),
+        Decimal(0),
+        Decimal(0),
+    )
+    perp_market2 = mango.GroupSlotPerpMarket(
+        fake_seeded_public_key("perp market 2"),
+        Decimal(0),
+        Decimal(0),
+        Decimal(0),
+        Decimal(0),
+        Decimal(0),
+        Decimal(0),
+        Decimal(0),
+    )
+    perp_market3 = mango.GroupSlotPerpMarket(
+        fake_seeded_public_key("perp market 3"),
+        Decimal(0),
+        Decimal(0),
+        Decimal(0),
+        Decimal(0),
+        Decimal(0),
+        Decimal(0),
+        Decimal(0),
+    )
+    slot1 = mango.GroupSlot(
+        1,
+        slot1_token_bank.token,
+        slot1_token_bank,
+        shared_quote_token_bank,
+        spot_market1,
+        None,
+        mango.NullLotSizeConverter(),
+        fake_seeded_public_key("oracle 1"),
+    )
     # MNGO is a special case since that's the current name used for liquidity tokens.
-    slot2 = mango.GroupSlot(4, mngo_token_bank.token, mngo_token_bank, shared_quote_token_bank, spot_market2,
-                            perp_market2, mango.NullLotSizeConverter(), fake_seeded_public_key("oracle 2"))
-    slot3 = mango.GroupSlot(6, slot3_instrument, None, shared_quote_token_bank, None, perp_market3,
-                            mango.NullLotSizeConverter(), fake_seeded_public_key("oracle 3"))
+    slot2 = mango.GroupSlot(
+        4,
+        mngo_token_bank.token,
+        mngo_token_bank,
+        shared_quote_token_bank,
+        spot_market2,
+        perp_market2,
+        mango.NullLotSizeConverter(),
+        fake_seeded_public_key("oracle 2"),
+    )
+    slot3 = mango.GroupSlot(
+        6,
+        slot3_instrument,
+        None,
+        shared_quote_token_bank,
+        None,
+        perp_market3,
+        mango.NullLotSizeConverter(),
+        fake_seeded_public_key("oracle 3"),
+    )
     slots: typing.Sequence[mango.GroupSlot] = [slot1, slot2, slot3]
 
-    actual = mango.Group(account_info, mango.Version.V1, name, meta_data, shared_quote_token_bank, in_basket,
-                         slots, signer_nonce, signer_key, admin_key, serum_program_address,
-                         cache_key, valid_interval, insurance_vault, srm_vault, msrm_vault, fees_vault)
+    actual = mango.Group(
+        account_info,
+        mango.Version.V1,
+        name,
+        meta_data,
+        shared_quote_token_bank,
+        in_basket,
+        slots,
+        signer_nonce,
+        signer_key,
+        admin_key,
+        serum_program_address,
+        cache_key,
+        valid_interval,
+        insurance_vault,
+        srm_vault,
+        msrm_vault,
+        fees_vault,
+        max_mango_accounts,
+        num_mango_accounts,
+        referral_surcharge_centibps,
+        referral_share_centibps,
+        referral_mngo_required,
+    )
 
     assert actual.shared_quote == shared_quote_token_bank
     assert actual.liquidity_incentive_token_bank == mngo_token_bank
     assert actual.liquidity_incentive_token == mngo_token_bank.token
 
-    assert len(actual.tokens) == 3  # Shared Quote is included, slot3 has no TokenBank so is not a Token
+    assert (
+        len(actual.tokens) == 3
+    )  # Shared Quote is included, slot3 has no TokenBank so is not a Token
     assert actual.tokens[0] == slot1.base_token_bank
     assert actual.tokens[1] == slot2.base_token_bank
     assert actual.tokens[2] == shared_quote_token_bank
@@ -185,11 +308,23 @@ def test_slot_lookups() -> None:
     assert actual.perp_markets_by_index[6] == slot3.perp_market
     assert actual.perp_markets_by_index[7] is None
 
-    assert actual.slot_by_spot_market_address(fake_seeded_public_key("spot market 1")) == slot1
-    assert actual.slot_by_spot_market_address(fake_seeded_public_key("spot market 2")) == slot2
+    assert (
+        actual.slot_by_spot_market_address(fake_seeded_public_key("spot market 1"))
+        == slot1
+    )
+    assert (
+        actual.slot_by_spot_market_address(fake_seeded_public_key("spot market 2"))
+        == slot2
+    )
 
-    assert actual.slot_by_perp_market_address(fake_seeded_public_key("perp market 2")) == slot2
-    assert actual.slot_by_perp_market_address(fake_seeded_public_key("perp market 3")) == slot3
+    assert (
+        actual.slot_by_perp_market_address(fake_seeded_public_key("perp market 2"))
+        == slot2
+    )
+    assert (
+        actual.slot_by_perp_market_address(fake_seeded_public_key("perp market 3"))
+        == slot3
+    )
 
     assert actual.slot_by_instrument_or_none(fake_instrument()) is None
     assert actual.slot_by_instrument_or_none(fake_instrument("slot3")) == slot3
@@ -255,3 +390,26 @@ def test_loaded_group_slot_lookups() -> None:
     assert group.slots_by_index[12].base_instrument.symbol == "MATIC"
     assert group.slots_by_index[13] is None
     assert group.slots_by_index[14] is None
+
+
+def test_derive_referrer_record_address() -> None:
+    context = fake_context(
+        mango_program_address=PublicKey("4skJ85cdxQAFVKbcGgfun8iZPL7BadVYXG3kGEGkufqA")
+    )
+    group = fake_group(
+        address=PublicKey("Ec2enZyoC4nGpEfu2sUNAa2nUGJHWxoUWYSEJ2hNTWTA")
+    )
+    actual = group.derive_referrer_record_address(context, "Test")
+
+    # Value derived using mango-client-v3: 2rZyTeG2K45oLWiGHBZKdcsWig5PL5c3yUa9Fc35mY48
+    expected = PublicKey("7bPLkq9kmFACvpEps1sUjqY1a6ormFxa9LctD1RWnzDd")
+
+    assert actual == expected
+
+    # 'daffy' is the referrer ID used in example/registerRefId.ts in mango-client-v3
+    actual_daffy = group.derive_referrer_record_address(context, "daffy")
+
+    # Value derived using mango-client-v3: 6T3vGwbLcS87vuthXomRv5W1TYe82rttNC8kWoDC93JD
+    expected_daffy = PublicKey("6T3vGwbLcS87vuthXomRv5W1TYe82rttNC8kWoDC93JD")
+
+    assert actual_daffy == expected_daffy

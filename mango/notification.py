@@ -24,6 +24,7 @@ import typing
 from urllib.parse import unquote
 
 from .liquidationevent import LiquidationEvent
+from .output import output
 
 
 # # 🥭 Notification
@@ -51,7 +52,9 @@ class NotificationTarget(metaclass=abc.ABCMeta):
 
     @abc.abstractmethod
     def send_notification(self, item: typing.Any) -> None:
-        raise NotImplementedError("NotificationTarget.send() is not implemented on the base type.")
+        raise NotImplementedError(
+            "NotificationTarget.send() is not implemented on the base type."
+        )
 
     def __str__(self) -> str:
         return "« NotificationTarget »"
@@ -86,7 +89,11 @@ class TelegramNotificationTarget(NotificationTarget):
         self.bot_id = bot_id
 
     def send_notification(self, item: typing.Any) -> None:
-        payload = {"disable_notification": True, "chat_id": self.chat_id, "text": str(item)}
+        payload = {
+            "disable_notification": True,
+            "chat_id": self.chat_id,
+            "text": str(item),
+        }
         url = f"https://api.telegram.org/bot{self.bot_id}/sendMessage"
         headers = {"Content-Type": "application/json"}
         requests.post(url, json=payload, headers=headers)
@@ -105,9 +112,7 @@ class DiscordNotificationTarget(NotificationTarget):
         self.address = address
 
     def send_notification(self, item: typing.Any) -> None:
-        payload = {
-            "content": str(item)
-        }
+        payload = {"content": str(item)}
         url = self.address
         headers = {"Content-Type": "application/json"}
         requests.post(url, json=payload, headers=headers)
@@ -170,7 +175,15 @@ class MailjetNotificationTarget(NotificationTarget):
     def __init__(self, encoded_parameters: str) -> None:
         super().__init__()
         self.address = "https://api.mailjet.com/v3.1/send"
-        api_key, api_secret, subject, from_name, from_address, to_name, to_address = encoded_parameters.split(":")
+        (
+            api_key,
+            api_secret,
+            subject,
+            from_name,
+            from_address,
+            to_name,
+            to_address,
+        ) = encoded_parameters.split(":")
         self.api_key: str = unquote(api_key)
         self.api_secret: str = unquote(api_secret)
         self.subject: str = unquote(subject)
@@ -183,25 +196,19 @@ class MailjetNotificationTarget(NotificationTarget):
         payload = {
             "Messages": [
                 {
-                    "From": {
-                        "Email": self.from_address,
-                        "Name": self.from_name
-                    },
+                    "From": {"Email": self.from_address, "Name": self.from_name},
                     "Subject": self.subject,
                     "TextPart": str(item),
-                    "To": [
-                        {
-                            "Email": self.to_address,
-                            "Name": self.to_name
-                        }
-                    ]
+                    "To": [{"Email": self.to_address, "Name": self.to_name}],
                 }
             ]
         }
 
         url = self.address
         headers = {"Content-Type": "application/json"}
-        requests.post(url, json=payload, headers=headers, auth=(self.api_key, self.api_secret))
+        requests.post(
+            url, json=payload, headers=headers, auth=(self.api_key, self.api_secret)
+        )
 
     def __str__(self) -> str:
         return f"« MailjetNotificationTarget To: '{self.to_name}' '{self.to_address}' with subject '{self.subject}' »"
@@ -231,12 +238,20 @@ class CsvFileNotificationTarget(NotificationTarget):
             if not os.path.isfile(self.filename) or os.path.getsize(self.filename) == 0:
                 with open(self.filename, "w") as empty_file:
                     empty_file.write(
-                        '"Timestamp","Liquidator Name","Group","Succeeded","Signature","Wallet","Margin Account","Token Changes"\n')
+                        '"Timestamp","Liquidator Name","Group","Succeeded","Signature","Wallet","Margin Account","Token Changes"\n'
+                    )
 
             with open(self.filename, "a") as csvfile:
                 result = "Succeeded" if event.succeeded else "Failed"
-                row_data = [event.timestamp, event.liquidator_name, event.group_name, result,
-                            " ".join(event.signatures), event.wallet_address, event.account_address]
+                row_data = [
+                    event.timestamp,
+                    event.liquidator_name,
+                    event.group_name,
+                    result,
+                    " ".join(event.signatures),
+                    event.wallet_address,
+                    event.account_address,
+                ]
                 for change in event.changes:
                     row_data += [f"{change.value:.8f}", change.token.name]
                 file_writer = csv.writer(csvfile, quoting=csv.QUOTE_MINIMAL)
@@ -252,7 +267,11 @@ class CsvFileNotificationTarget(NotificationTarget):
 # `NotificationTarget` if the filter function returns `True` for the notification item.
 #
 class FilteringNotificationTarget(NotificationTarget):
-    def __init__(self, inner_notifier: NotificationTarget, filter_func: typing.Callable[[typing.Any], bool]) -> None:
+    def __init__(
+        self,
+        inner_notifier: NotificationTarget,
+        filter_func: typing.Callable[[typing.Any], bool],
+    ) -> None:
         super().__init__()
         self.inner_notifier: NotificationTarget = inner_notifier
         self.filter_func = filter_func
@@ -275,7 +294,7 @@ class ConsoleNotificationTarget(NotificationTarget):
         self.name = name
 
     def send_notification(self, item: typing.Any) -> None:
-        print(self.name, item)
+        output(self.name, item)
 
     def __str__(self) -> str:
         return f"« ConsoleNotificationTarget '{self.name}' »"
@@ -299,7 +318,9 @@ class CompoundNotificationTarget(NotificationTarget):
             except Exception as exception:
                 if not self.in_exception_handler:
                     self.in_exception_handler = True
-                    self._logger.error(f"Failed to send notification to: {target} - {exception}")
+                    self._logger.error(
+                        f"Failed to send notification to: {target} - {exception}"
+                    )
             finally:
                 self.in_exception_handler = False
 
@@ -344,9 +365,9 @@ def parse_notification_target(target: str) -> NotificationTarget:
 # `NotificationTarget` to be plugged in to the `logging` subsystem to receive log messages
 # and notify however it chooses.
 #
-class NotificationHandler(logging.StreamHandler):
+class NotificationHandler(logging.StreamHandler):  # type: ignore
     def __init__(self, target: NotificationTarget) -> None:
-        logging.StreamHandler.__init__(self)
+        super().__init__()
         self.target = target
 
     def emit(self, record: logging.LogRecord) -> None:

@@ -27,13 +27,13 @@ from .cache import Cache
 from .context import Context
 from .group import Group
 from .layouts import layouts
-from .lotsizeconverter import NullLotSizeConverter
+from .lotsizeconverter import LotSizeConverter, NullLotSizeConverter
 from .openorders import OpenOrders
 from .orderbookside import PerpOrderBookSide
-from .perpeventqueue import PerpEventQueue
+from .perpeventqueue import PerpEvent, PerpEventQueue, UnseenPerpEventChangesTracker
 from .perpmarketdetails import PerpMarketDetails
-from .serumeventqueue import SerumEventQueue
-from .token import Instrument, Token
+from .serumeventqueue import SerumEvent, SerumEventQueue, UnseenSerumEventChangesTracker
+from .tokens import Instrument, Token
 from .tokenbank import NodeBank, RootBank, TokenBank
 
 
@@ -42,24 +42,31 @@ from .tokenbank import NodeBank, RootBank, TokenBank
 # Given a `Context` and an account type, returns a function that can take an `AccountInfo` and
 # return one of our objects.
 #
-def build_account_info_converter(context: Context, account_type: str) -> typing.Callable[[AccountInfo], AddressableAccount]:
+def build_account_info_converter(
+    context: Context, account_type: str
+) -> typing.Union[
+    typing.Callable[[AccountInfo], AddressableAccount],
+    typing.Callable[[AccountInfo], typing.Sequence[typing.Any]],
+]:
     account_type_upper = account_type.upper()
-    if account_type_upper == "GROUP":
+    if account_type_upper == "ACCOUNTINFO":
+        return lambda account_info: account_info
+    elif account_type_upper == "GROUP":
         return lambda account_info: Group.parse_with_context(context, account_info)
-    elif account_type_upper == "ACCOUNT":
+    elif account_type_upper == "ACCOUNT" or account_type_upper == "MANGOACCOUNT":
+
         def account_loader(account_info: AccountInfo) -> Account:
             layout_account = layouts.MANGO_ACCOUNT.parse(account_info.data)
             group_address = layout_account.group
             group: Group = Group.load(context, group_address)
             cache: Cache = group.fetch_cache(context)
             return Account.parse(account_info, group, cache)
+
         return account_loader
     elif account_type_upper == "OPENORDERS":
-        return lambda account_info: OpenOrders.parse(account_info, Decimal(6), Decimal(6))
-    elif account_type_upper == "PERPEVENTQUEUE":
-        return lambda account_info: PerpEventQueue.parse(account_info, NullLotSizeConverter())
-    elif account_type_upper == "SERUMEVENTQUEUE":
-        return lambda account_info: SerumEventQueue.parse(account_info)
+        return lambda account_info: OpenOrders.parse(
+            account_info, Decimal(6), Decimal(6)
+        )
     elif account_type_upper == "CACHE":
         return lambda account_info: Cache.parse(account_info)
     elif account_type_upper == "ROOTBANK":
@@ -67,21 +74,74 @@ def build_account_info_converter(context: Context, account_type: str) -> typing.
     elif account_type_upper == "NODEBANK":
         return lambda account_info: NodeBank.parse(account_info)
     elif account_type_upper == "PERPMARKETDETAILS":
+
         def perp_market_details_loader(account_info: AccountInfo) -> PerpMarketDetails:
             layout_perp_market_details = layouts.PERP_MARKET.parse(account_info.data)
             group_address = layout_perp_market_details.group
             group: Group = Group.load(context, group_address)
             return PerpMarketDetails.parse(account_info, group)
+
         return perp_market_details_loader
     elif account_type_upper == "PERPORDERBOOKSIDE":
+
         class __FakePerpMarketDetails(PerpMarketDetails):
             def __init__(self) -> None:
-                self.base_instrument = Instrument("UNKNOWNBASE", "Unknown Base", Decimal(0))
-                self.quote_token = TokenBank(Token("UNKNOWNQUOTE", "Unknown Quote",
-                                             Decimal(0), PublicKey(0)), PublicKey(0))
+                self.base_instrument = Instrument(
+                    "UNKNOWNBASE", "Unknown Base", Decimal(0)
+                )
+                self.quote_token = TokenBank(
+                    Token("UNKNOWNQUOTE", "Unknown Quote", Decimal(0), PublicKey(0)),
+                    PublicKey(0),
+                )
                 self.base_lot_size = Decimal(1)
                 self.quote_lot_size = Decimal(1)
 
-        return lambda account_info: PerpOrderBookSide.parse(account_info, __FakePerpMarketDetails())
+        return lambda account_info: PerpOrderBookSide.parse(
+            account_info, __FakePerpMarketDetails()
+        )
+    elif account_type_upper == "SERUMEVENTQUEUE":
+        return lambda account_info: SerumEventQueue.parse(account_info)
+    elif account_type_upper == "SERUMEVENTS":
+        serum_splitter: typing.Optional[UnseenSerumEventChangesTracker] = None
+
+        def __split_serum_events(
+            account_info: AccountInfo,
+        ) -> typing.Sequence[SerumEvent]:
+            nonlocal serum_splitter
+            if serum_splitter is None:
+                initial_serum_event_queue: SerumEventQueue = SerumEventQueue.parse(
+                    account_info
+                )
+                serum_splitter = UnseenSerumEventChangesTracker(
+                    initial_serum_event_queue
+                )
+            serum_event_queue: SerumEventQueue = SerumEventQueue.parse(account_info)
+            return serum_splitter.unseen(serum_event_queue)
+
+        return __split_serum_events
+    elif account_type_upper == "PERPEVENTQUEUE":
+        return lambda account_info: PerpEventQueue.parse(
+            account_info, NullLotSizeConverter()
+        )
+    elif account_type_upper == "PERPEVENTS":
+        # It'd be nice to get the market's lot size converter, but we don't have its address yet.
+        lot_size_converter: LotSizeConverter = NullLotSizeConverter()
+        perp_splitter: typing.Optional[UnseenPerpEventChangesTracker] = None
+
+        def __split_perp_events(
+            account_info: AccountInfo,
+        ) -> typing.Sequence[PerpEvent]:
+            nonlocal perp_splitter
+            if perp_splitter is None:
+                initial_perp_event_queue: PerpEventQueue = PerpEventQueue.parse(
+                    account_info, lot_size_converter
+                )
+                perp_splitter = UnseenPerpEventChangesTracker(initial_perp_event_queue)
+            perp_event_queue: PerpEventQueue = PerpEventQueue.parse(
+                account_info, lot_size_converter
+            )
+            return perp_splitter.unseen(perp_event_queue)
+
+        return __split_perp_events
 
     raise Exception(f"Could not find AccountInfo converter for type {account_type}.")

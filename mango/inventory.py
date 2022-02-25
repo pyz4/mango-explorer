@@ -21,15 +21,10 @@ from decimal import Decimal
 
 from .account import Account
 from .cache import Cache
-from .calculators.collateralcalculator import CollateralCalculator
-from .calculators.spotcollateralcalculator import SpotCollateralCalculator
-from .calculators.perpcollateralcalculator import PerpCollateralCalculator
 from .group import Group
 from .instrumentvalue import InstrumentValue
-from .market import InventorySource, Market
+from .markets import InventorySource, Market
 from .openorders import OpenOrders
-from .perpmarket import PerpMarket
-from .token import Token
 from .watcher import Watcher
 
 
@@ -38,7 +33,14 @@ from .watcher import Watcher
 # This class details inventory of a crypto account for a market.
 #
 class Inventory:
-    def __init__(self, inventory_source: InventorySource, liquidity_incentives: InstrumentValue, available_collateral: InstrumentValue, base: InstrumentValue, quote: InstrumentValue) -> None:
+    def __init__(
+        self,
+        inventory_source: InventorySource,
+        liquidity_incentives: InstrumentValue,
+        available_collateral: InstrumentValue,
+        base: InstrumentValue,
+        quote: InstrumentValue,
+    ) -> None:
         self._logger: logging.Logger = logging.getLogger(self.__class__.__name__)
         self.inventory_source: InventorySource = inventory_source
         self.available_collateral: InstrumentValue = available_collateral
@@ -60,19 +62,33 @@ class Inventory:
         return f"{self}"
 
 
-class SpotInventoryAccountWatcher:
-    def __init__(self, market: Market, account_watcher: Watcher[Account], group_watcher: Watcher[Group], all_open_orders_watchers: typing.Sequence[Watcher[OpenOrders]], cache_watcher: Watcher[Cache]):
+class InventoryAccountWatcher:
+    def __init__(
+        self,
+        market: Market,
+        account_watcher: Watcher[Account],
+        group_watcher: Watcher[Group],
+        all_open_orders_watchers: typing.Sequence[Watcher[OpenOrders]],
+        cache_watcher: Watcher[Cache],
+    ):
         self.account_watcher: Watcher[Account] = account_watcher
         self.group_watcher: Watcher[Group] = group_watcher
-        self.all_open_orders_watchers: typing.Sequence[Watcher[OpenOrders]] = all_open_orders_watchers
+        self.all_open_orders_watchers: typing.Sequence[
+            Watcher[OpenOrders]
+        ] = all_open_orders_watchers
         self.cache_watcher: Watcher[Cache] = cache_watcher
         account: Account = account_watcher.latest
-        self.spot_account_index: int = group_watcher.latest.slot_by_spot_market_address(market.address).index
-        base_value = InstrumentValue.find_by_symbol(account.net_values, market.base.symbol)
+        self.spot_account_index: int = group_watcher.latest.slot_by_spot_market_address(
+            market.address
+        ).index
+        base_value = InstrumentValue.find_by_symbol(
+            account.net_values, market.base.symbol
+        )
         self.base_index: int = account.net_values_by_index.index(base_value)
-        quote_value = InstrumentValue.find_by_symbol(account.net_values, market.quote.symbol)
+        quote_value = InstrumentValue.find_by_symbol(
+            account.net_values, market.quote.symbol
+        )
         self.quote_index: int = account.net_values_by_index.index(quote_value)
-        self.collateral_calculator: CollateralCalculator = SpotCollateralCalculator()
 
     @property
     def latest(self) -> Inventory:
@@ -85,50 +101,28 @@ class SpotInventoryAccountWatcher:
         mngo_accrued: InstrumentValue = InstrumentValue(mngo, Decimal(0))
 
         all_open_orders: typing.Dict[str, OpenOrders] = {
-            str(oo_watcher.latest.address): oo_watcher.latest for oo_watcher in self.all_open_orders_watchers}
-        available_collateral: InstrumentValue = self.collateral_calculator.calculate(
-            account, all_open_orders, group, cache)
+            str(oo_watcher.latest.address): oo_watcher.latest
+            for oo_watcher in self.all_open_orders_watchers
+        }
+
+        frame = account.to_dataframe(group, all_open_orders, cache)
+        available_collateral: InstrumentValue = account.init_health(frame)
 
         base_value = account.net_values_by_index[self.base_index]
         if base_value is None:
             raise Exception(
-                f"Could not find net assets in account {account.address} at index {self.base_index}.")
+                f"Could not find net assets in account {account.address} at index {self.base_index}."
+            )
         quote_value = account.net_values_by_index[self.quote_index]
         if quote_value is None:
             raise Exception(
-                f"Could not find net assets in account {account.address} at index {self.quote_index}.")
+                f"Could not find net assets in account {account.address} at index {self.quote_index}."
+            )
 
-        return Inventory(InventorySource.ACCOUNT, mngo_accrued, available_collateral, base_value, quote_value)
-
-
-class PerpInventoryAccountWatcher:
-    def __init__(self, market: PerpMarket, account_watcher: Watcher[Account], group_watcher: Watcher[Group], cache_watcher: Watcher[Cache], group: Group):
-        self.market: PerpMarket = market
-        self.account_watcher: Watcher[Account] = account_watcher
-        self.group_watcher: Watcher[Group] = group_watcher
-        self.cache_watcher: Watcher[Cache] = cache_watcher
-        self.perp_account_index: int = group.slot_by_perp_market_address(market.address).index
-        account: Account = account_watcher.latest
-        quote_value = InstrumentValue.find_by_symbol(account.net_values, market.quote.symbol)
-        self.quote_index: int = account.net_values_by_index.index(quote_value)
-        self.collateral_calculator: CollateralCalculator = PerpCollateralCalculator()
-
-    @property
-    def latest(self) -> Inventory:
-        account: Account = self.account_watcher.latest
-        group: Group = self.group_watcher.latest
-        cache: Cache = self.cache_watcher.latest
-        perp_account = account.perp_accounts_by_index[self.perp_account_index]
-        if perp_account is None:
-            raise Exception(
-                f"Could not find perp account for {self.market.symbol} in account {account.address} at index {self.perp_account_index}.")
-
-        available_collateral: InstrumentValue = self.collateral_calculator.calculate(account, {}, group, cache)
-
-        base_lots = perp_account.base_position
-        base_value = self.market.lot_size_converter.base_size_lots_to_number(base_lots)
-        # TODO - what about ADA, when base isn't a Token?
-        base_token_value = InstrumentValue(Token.ensure(self.market.base), base_value)
-        quote_token_value = account.shared_quote.net_value
-
-        return Inventory(InventorySource.ACCOUNT, perp_account.mngo_accrued, available_collateral, base_token_value, quote_token_value)
+        return Inventory(
+            InventorySource.ACCOUNT,
+            mngo_accrued,
+            available_collateral,
+            base_value,
+            quote_value,
+        )

@@ -1,3 +1,5 @@
+import typing
+
 from .context import mango
 from .fakes import fake_mango_instruction, fake_seeded_public_key, fake_token
 
@@ -5,17 +7,18 @@ from datetime import datetime
 from decimal import Decimal
 from solana.publickey import PublicKey
 
-import typing
-
 
 def test_transaction_instruction_constructor() -> None:
     instruction_type: mango.InstructionType = mango.InstructionType.Deposit
     instruction_data: typing.Dict[str, str] = {"key": "test value"}
+    program_id = fake_seeded_public_key("program id")
     account1 = fake_seeded_public_key("account 1")
     account2 = fake_seeded_public_key("account 2")
     account3 = fake_seeded_public_key("account 3")
     accounts = [account1, account2, account3]
-    actual = mango.MangoInstruction(instruction_type, instruction_data, accounts)
+    actual = mango.MangoInstruction(
+        program_id, instruction_type, bytes(), instruction_data, accounts
+    )
     assert actual is not None
     assert actual.instruction_type == instruction_type
     assert actual.instruction_data == instruction_data
@@ -23,7 +26,7 @@ def test_transaction_instruction_constructor() -> None:
 
 
 def test_transaction_scout_constructor() -> None:
-    timestamp: datetime = datetime.now()
+    timestamp: datetime = mango.utc_now()
     signatures: typing.Sequence[str] = ["Signature1", "Signature2"]
     succeeded: bool = True
     group_name: str = "BTC_ETH_USDT"
@@ -37,10 +40,23 @@ def test_transaction_scout_constructor() -> None:
     token_value = mango.InstrumentValue(token, Decimal(28))
     owner = fake_seeded_public_key("owner")
     owned_token_value = mango.OwnedInstrumentValue(owner, token_value)
-    pre_token_balances: typing.Sequence[mango.OwnedInstrumentValue] = [owned_token_value]
-    post_token_balances: typing.Sequence[mango.OwnedInstrumentValue] = [owned_token_value]
-    actual = mango.TransactionScout(timestamp, signatures, succeeded, group_name, accounts,
-                                    instructions, messages, pre_token_balances, post_token_balances)
+    pre_token_balances: typing.Sequence[mango.OwnedInstrumentValue] = [
+        owned_token_value
+    ]
+    post_token_balances: typing.Sequence[mango.OwnedInstrumentValue] = [
+        owned_token_value
+    ]
+    actual = mango.TransactionScout(
+        timestamp,
+        signatures,
+        succeeded,
+        group_name,
+        accounts,
+        instructions,
+        messages,
+        pre_token_balances,
+        post_token_balances,
+    )
     assert actual is not None
     assert actual.timestamp == timestamp
     assert actual.signatures == signatures

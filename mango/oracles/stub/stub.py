@@ -15,20 +15,27 @@
 
 
 import rx
-import rx.operators as ops
+import rx.operators
 import typing
 
-from datetime import datetime
 from decimal import Decimal
 from solana.publickey import PublicKey
 
 from ...cache import Cache
 from ...context import Context
-from ...ensuremarketloaded import ensure_market_loaded
-from ...market import Market
+from ...datetimes import utc_now
+from ...loadedmarket import LoadedMarket
+from ...markets import Market
 from ...observables import observable_pipeline_error_reporter
-from ...oracle import Oracle, OracleProvider, OracleSource, Price, SupportedOracleFeature
+from ...oracle import (
+    Oracle,
+    OracleProvider,
+    OracleSource,
+    Price,
+    SupportedOracleFeature,
+)
 from ...perpmarket import PerpMarket
+from ...porcelain import market as porcelain_market
 from ...spotmarket import SpotMarket
 
 
@@ -65,7 +72,9 @@ class StubOracle(Oracle):
         cache: Cache = Cache.load(context, self.cache_address)
         raw_price = cache.price_cache[self.index]
         if raw_price is None:
-            raise Exception(f"Stub Oracle does not contain a price for market {self.symbol} at index {self.index}.")
+            raise Exception(
+                f"Stub Oracle does not contain a price for market {self.symbol} at index {self.index}."
+            )
         # Should convert raw_price to actual price.
         # Discord on stub price from lagzda:
         #   https://discord.com/channels/791995070613159966/853370356244152360/871871877382033478
@@ -73,15 +82,25 @@ class StubOracle(Oracle):
         # base I did the incorrect change. Instead of adjusting RAY etc stub oracles prices from 2 to
         # 2_000_000, I should've adjusted the Pyth oracles prices which soon will be deployed. That
         # will give you the consistent results, but you'll need to adjust your code"
-        return Price(self.source, datetime.now(), self.market, raw_price.price, raw_price.price, raw_price.price, StubOracleConfidence)
+        return Price(
+            self.source,
+            utc_now(),
+            self.market,
+            raw_price.price,
+            raw_price.price,
+            raw_price.price,
+            StubOracleConfidence,
+        )
 
-    def to_streaming_observable(self, context: Context) -> rx.core.typing.Observable[Price]:
+    def to_streaming_observable(
+        self, context: Context
+    ) -> rx.core.typing.Observable[Price]:
         prices = rx.interval(1).pipe(
-            ops.observe_on(context.create_thread_pool_scheduler()),
-            ops.start_with(-1),
-            ops.map(lambda _: self.fetch_price(context)),
-            ops.catch(observable_pipeline_error_reporter),
-            ops.retry(),
+            rx.operators.observe_on(context.create_thread_pool_scheduler()),
+            rx.operators.start_with(-1),
+            rx.operators.map(lambda _: self.fetch_price(context)),
+            rx.operators.catch(observable_pipeline_error_reporter),
+            rx.operators.retry(),
         )
         return typing.cast(rx.core.typing.Observable[Price], prices)
 
@@ -91,18 +110,27 @@ class StubOracle(Oracle):
 # Implements the `OracleProvider` abstract base class specialised to the Serum Network.
 #
 
+
 class StubOracleProvider(OracleProvider):
     def __init__(self) -> None:
         super().__init__("Stub Oracle Factory")
 
-    def oracle_for_market(self, context: Context, market: Market) -> typing.Optional[Oracle]:
-        loaded_market: Market = ensure_market_loaded(context, market)
-        if isinstance(loaded_market, SpotMarket):
-            spot_index: int = loaded_market.group.slot_by_spot_market_address(loaded_market.address).index
-            return StubOracle(loaded_market, spot_index, loaded_market.group.cache)
-        elif isinstance(loaded_market, PerpMarket):
-            perp_index: int = loaded_market.group.slot_by_perp_market_address(loaded_market.address).index
-            return StubOracle(loaded_market, perp_index, loaded_market.group.cache)
+    def oracle_for_market(
+        self, context: Context, market: Market
+    ) -> typing.Optional[Oracle]:
+        loaded_market: LoadedMarket = porcelain_market(context, market.symbol)
+        if SpotMarket.isa(loaded_market):
+            spot_market = SpotMarket.ensure(loaded_market)
+            spot_index: int = spot_market.group.slot_by_spot_market_address(
+                loaded_market.address
+            ).index
+            return StubOracle(spot_market, spot_index, spot_market.group.cache)
+        elif PerpMarket.isa(loaded_market):
+            perp_market = PerpMarket.ensure(loaded_market)
+            perp_index: int = perp_market.group.slot_by_perp_market_address(
+                loaded_market.address
+            ).index
+            return StubOracle(perp_market, perp_index, perp_market.group.cache)
 
         return None
 

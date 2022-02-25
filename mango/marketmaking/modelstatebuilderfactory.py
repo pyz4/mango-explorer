@@ -21,7 +21,13 @@ from solana.publickey import PublicKey
 
 from ..constants import SYSTEM_PROGRAM_ADDRESS
 from ..modelstate import ModelState
-from .modelstatebuilder import ModelStateBuilder, WebsocketModelStateBuilder, SerumPollingModelStateBuilder, SpotPollingModelStateBuilder, PerpPollingModelStateBuilder
+from .modelstatebuilder import (
+    ModelStateBuilder,
+    WebsocketModelStateBuilder,
+    SerumPollingModelStateBuilder,
+    SpotPollingModelStateBuilder,
+    PerpPollingModelStateBuilder,
+)
 
 
 class ModelUpdateMode(enum.Enum):
@@ -40,78 +46,201 @@ class ModelUpdateMode(enum.Enum):
 #
 # Base class for building a `ModelState` through polling or websockets.
 #
-def model_state_builder_factory(mode: ModelUpdateMode, context: mango.Context, disposer: mango.DisposePropagator,
-                                websocket_manager: mango.WebSocketSubscriptionManager, health_check: mango.HealthCheck,
-                                wallet: mango.Wallet, group: mango.Group, account: mango.Account,
-                                market: mango.Market, oracle: mango.Oracle) -> ModelStateBuilder:
+def model_state_builder_factory(
+    mode: ModelUpdateMode,
+    context: mango.Context,
+    disposer: mango.Disposable,
+    websocket_manager: mango.WebSocketSubscriptionManager,
+    health_check: mango.HealthCheck,
+    wallet: mango.Wallet,
+    group: mango.Group,
+    account: mango.Account,
+    market: mango.LoadedMarket,
+    oracle: mango.Oracle,
+) -> ModelStateBuilder:
     if mode == ModelUpdateMode.WEBSOCKET:
-        return _websocket_model_state_builder_factory(context, disposer, websocket_manager, health_check, wallet, group, account, market, oracle)
+        return _websocket_model_state_builder_factory(
+            context,
+            disposer,
+            websocket_manager,
+            health_check,
+            wallet,
+            group,
+            account,
+            market,
+            oracle,
+        )
     else:
-        return _polling_model_state_builder_factory(context, wallet, group, account, market, oracle)
+        return _polling_model_state_builder_factory(
+            context, wallet, group, account, market, oracle
+        )
 
 
-def _polling_model_state_builder_factory(context: mango.Context, wallet: mango.Wallet, group: mango.Group,
-                                         account: mango.Account, market: mango.Market,
-                                         oracle: mango.Oracle) -> ModelStateBuilder:
-    if isinstance(market, mango.SerumMarket):
-        return _polling_serum_model_state_builder_factory(context, wallet, group, account, market, oracle)
-    elif isinstance(market, mango.SpotMarket):
-        return _polling_spot_model_state_builder_factory(group, account, market, oracle)
-    elif isinstance(market, mango.PerpMarket):
-        return _polling_perp_model_state_builder_factory(group, account, market, oracle)
+def _polling_model_state_builder_factory(
+    context: mango.Context,
+    wallet: mango.Wallet,
+    group: mango.Group,
+    account: mango.Account,
+    market: mango.Market,
+    oracle: mango.Oracle,
+) -> ModelStateBuilder:
+    if mango.SerumMarket.isa(market):
+        return _polling_serum_model_state_builder_factory(
+            context, wallet, group, account, mango.SerumMarket.ensure(market), oracle
+        )
+    elif mango.SpotMarket.isa(market):
+        return _polling_spot_model_state_builder_factory(
+            group, account, mango.SpotMarket.ensure(market), oracle
+        )
+    elif mango.PerpMarket.isa(market):
+        return _polling_perp_model_state_builder_factory(
+            group, account, mango.PerpMarket.ensure(market), oracle
+        )
     else:
         raise Exception(f"Could not determine type of market {market.symbol}")
 
 
-def _polling_serum_model_state_builder_factory(context: mango.Context, wallet: mango.Wallet, group: mango.Group,
-                                               account: mango.Account, market: mango.SerumMarket,
-                                               oracle: mango.Oracle) -> ModelStateBuilder:
+def _polling_serum_model_state_builder_factory(
+    context: mango.Context,
+    wallet: mango.Wallet,
+    group: mango.Group,
+    account: mango.Account,
+    market: mango.SerumMarket,
+    oracle: mango.Oracle,
+) -> ModelStateBuilder:
     base_account = mango.TokenAccount.fetch_largest_for_owner_and_token(
-        context, wallet.address, market.base)
+        context, wallet.address, market.base
+    )
     if base_account is None:
         raise Exception(
-            f"Could not find token account owned by {wallet.address} for base token {market.base}.")
+            f"Could not find token account owned by {wallet.address} for base token {market.base}."
+        )
     quote_account = mango.TokenAccount.fetch_largest_for_owner_and_token(
-        context, wallet.address, market.quote)
+        context, wallet.address, market.quote
+    )
     if quote_account is None:
         raise Exception(
-            f"Could not find token account owned by {wallet.address} for quote token {market.quote}.")
+            f"Could not find token account owned by {wallet.address} for quote token {market.quote}."
+        )
     all_open_orders = mango.OpenOrders.load_for_market_and_owner(
-        context, market.address, wallet.address, context.serum_program_address, market.base.decimals, market.quote.decimals)
+        context,
+        market.address,
+        wallet.address,
+        context.serum_program_address,
+        market.base.decimals,
+        market.quote.decimals,
+    )
     if len(all_open_orders) == 0:
         raise Exception(
-            f"Could not find serum openorders account owned by {wallet.address} for market {market.symbol}.")
+            f"Could not find serum openorders account owned by {wallet.address} for market {market.symbol}."
+        )
     return SerumPollingModelStateBuilder(
-        all_open_orders[0].address, market, oracle, group.address, group.cache, account.address, all_open_orders[0].address, base_account, quote_account)
+        all_open_orders[0].address,
+        market,
+        oracle,
+        group.address,
+        group.cache,
+        account.address,
+        all_open_orders[0].address,
+        base_account,
+        quote_account,
+    )
 
 
-def _polling_spot_model_state_builder_factory(group: mango.Group, account: mango.Account, market: mango.SpotMarket,
-                                              oracle: mango.Oracle) -> ModelStateBuilder:
+def _polling_spot_model_state_builder_factory(
+    group: mango.Group,
+    account: mango.Account,
+    market: mango.SpotMarket,
+    oracle: mango.Oracle,
+) -> ModelStateBuilder:
     market_index: int = group.slot_by_spot_market_address(market.address).index
-    open_orders_address: typing.Optional[PublicKey] = account.spot_open_orders_by_index[market_index]
+    open_orders_address: typing.Optional[PublicKey] = account.spot_open_orders_by_index[
+        market_index
+    ]
     all_open_orders_addresses: typing.Sequence[PublicKey] = account.spot_open_orders
     if open_orders_address is None:
         raise Exception(
-            f"Could not find spot openorders in account {account.address} for market {market.symbol}.")
+            f"Could not find spot openorders in account {account.address} for market {market.symbol}."
+        )
     return SpotPollingModelStateBuilder(
-        open_orders_address, market, oracle, group.address, group.cache, account.address, open_orders_address, all_open_orders_addresses)
+        open_orders_address,
+        market,
+        oracle,
+        group.address,
+        group.cache,
+        account.address,
+        open_orders_address,
+        all_open_orders_addresses,
+    )
 
 
-def _polling_perp_model_state_builder_factory(group: mango.Group, account: mango.Account, market: mango.PerpMarket,
-                                              oracle: mango.Oracle) -> ModelStateBuilder:
-    return PerpPollingModelStateBuilder(account.address, market, oracle, group.address, group.cache, account.address)
+def _polling_perp_model_state_builder_factory(
+    group: mango.Group,
+    account: mango.Account,
+    market: mango.PerpMarket,
+    oracle: mango.Oracle,
+) -> ModelStateBuilder:
+    all_open_orders_addresses: typing.Sequence[PublicKey] = account.spot_open_orders
+    return PerpPollingModelStateBuilder(
+        account.address,
+        market,
+        oracle,
+        group.address,
+        group.cache,
+        all_open_orders_addresses,
+    )
 
 
-def _websocket_model_state_builder_factory(context: mango.Context, disposer: mango.DisposePropagator,
-                                           websocket_manager: mango.WebSocketSubscriptionManager,
-                                           health_check: mango.HealthCheck, wallet: mango.Wallet,
-                                           group: mango.Group, account: mango.Account, market: mango.Market,
-                                           oracle: mango.Oracle) -> ModelStateBuilder:
-    group_watcher = mango.build_group_watcher(context, websocket_manager, health_check, group)
+def __load_all_openorders_watchers(
+    context: mango.Context,
+    wallet: mango.Wallet,
+    account: mango.Account,
+    group: mango.Group,
+    websocket_manager: mango.WebSocketSubscriptionManager,
+    health_check: mango.HealthCheck,
+) -> typing.Sequence[mango.Watcher[mango.OpenOrders]]:
+    all_open_orders_watchers: typing.List[mango.Watcher[mango.OpenOrders]] = []
+    for basket_token in account.base_slots:
+        if basket_token.spot_open_orders is not None:
+            spot_market_symbol: str = f"spot:{basket_token.base_instrument.symbol}/{account.shared_quote_token.symbol}"
+            spot_market = mango.SpotMarket.ensure(
+                mango.market(context, spot_market_symbol)
+            )
+            oo_watcher = mango.build_spot_open_orders_watcher(
+                context,
+                websocket_manager,
+                health_check,
+                wallet,
+                account,
+                group,
+                spot_market,
+            )
+            all_open_orders_watchers += [oo_watcher]
+
+    return all_open_orders_watchers
+
+
+def _websocket_model_state_builder_factory(
+    context: mango.Context,
+    disposer: mango.Disposable,
+    websocket_manager: mango.WebSocketSubscriptionManager,
+    health_check: mango.HealthCheck,
+    wallet: mango.Wallet,
+    group: mango.Group,
+    account: mango.Account,
+    market: mango.LoadedMarket,
+    oracle: mango.Oracle,
+) -> ModelStateBuilder:
+    group_watcher = mango.build_group_watcher(
+        context, websocket_manager, health_check, group
+    )
     cache = mango.Cache.load(context, group.cache)
-    cache_watcher = mango.build_cache_watcher(context, websocket_manager, health_check, cache, group)
+    cache_watcher = mango.build_cache_watcher(
+        context, websocket_manager, health_check, cache, group
+    )
     account_subscription, latest_account_observer = mango.build_account_watcher(
-        context, websocket_manager, health_check, account, group_watcher, cache_watcher)
+        context, websocket_manager, health_check, account, group_watcher, cache_watcher
+    )
 
     initial_price = oracle.fetch_price(context)
     price_feed = oracle.to_streaming_observable(context)
@@ -120,53 +249,118 @@ def _websocket_model_state_builder_factory(context: mango.Context, disposer: man
     disposer.add_disposable(price_disposable)
     health_check.add("price_subscription", price_feed)
 
-    market = mango.ensure_market_loaded(context, market)
-    if isinstance(market, mango.SerumMarket):
-        order_owner: PublicKey = market.find_openorders_address_for_owner(
-            context, wallet.address) or SYSTEM_PROGRAM_ADDRESS
+    if mango.SerumMarket.isa(market):
+        serum_market = mango.SerumMarket.ensure(market)
+        order_owner: PublicKey = (
+            serum_market.find_openorders_address_for_owner(context, wallet.address)
+            or SYSTEM_PROGRAM_ADDRESS
+        )
         price_watcher: mango.Watcher[mango.Price] = mango.build_price_watcher(
-            context, websocket_manager, health_check, disposer, "serum", market)
-        inventory_watcher: mango.Watcher[mango.Inventory] = mango.build_serum_inventory_watcher(
-            context, websocket_manager, health_check, disposer, wallet, market, price_watcher)
-        latest_open_orders_observer: mango.Watcher[mango.PlacedOrdersContainer] = mango.build_serum_open_orders_watcher(
-            context, websocket_manager, health_check, market, wallet)
-        latest_orderbook_watcher = mango.build_orderbook_watcher(
-            context, websocket_manager, health_check, market)
-    elif isinstance(market, mango.SpotMarket):
-        market_index: int = group.slot_by_spot_market_address(market.address).index
-        order_owner = account.spot_open_orders_by_index[market_index] or SYSTEM_PROGRAM_ADDRESS
+            context, websocket_manager, health_check, disposer, "market", serum_market
+        )
+        inventory_watcher: mango.Watcher[
+            mango.Inventory
+        ] = mango.build_serum_inventory_watcher(
+            context,
+            websocket_manager,
+            health_check,
+            disposer,
+            wallet,
+            serum_market,
+            price_watcher,
+        )
+        latest_open_orders_observer: mango.Watcher[
+            mango.PlacedOrdersContainer
+        ] = mango.build_serum_open_orders_watcher(
+            context, websocket_manager, health_check, serum_market, wallet
+        )
+        latest_orderbook_watcher: mango.Watcher[
+            mango.OrderBook
+        ] = mango.build_orderbook_watcher(
+            context, websocket_manager, health_check, serum_market
+        )
+        latest_event_queue_watcher: mango.Watcher[
+            mango.EventQueue
+        ] = mango.build_serum_event_queue_watcher(
+            context, websocket_manager, health_check, serum_market
+        )
+    elif mango.SpotMarket.isa(market):
+        spot_market = mango.SpotMarket.ensure(market)
+        market_index: int = group.slot_by_spot_market_address(spot_market.address).index
+        order_owner = (
+            account.spot_open_orders_by_index[market_index] or SYSTEM_PROGRAM_ADDRESS
+        )
 
-        all_open_orders_watchers: typing.List[mango.Watcher[mango.OpenOrders]] = []
-        for basket_token in account.base_slots:
-            if basket_token.spot_open_orders is not None:
-                spot_market_symbol: str = f"spot:{basket_token.base_instrument.symbol}/{account.shared_quote_token.symbol}"
-                spot_market = context.market_lookup.find_by_symbol(spot_market_symbol)
-                if spot_market is None:
-                    raise Exception(f"Could not find spot market {spot_market_symbol}")
-                if not isinstance(spot_market, mango.SpotMarket):
-                    raise Exception(f"Market {spot_market_symbol} is not a spot market")
-                oo_watcher = mango.build_spot_open_orders_watcher(
-                    context, websocket_manager, health_check, wallet, account, group, spot_market)
-                all_open_orders_watchers += [oo_watcher]
-                if market.base == spot_market.base and market.quote == spot_market.quote:
-                    latest_open_orders_observer = oo_watcher
+        all_open_orders_watchers = __load_all_openorders_watchers(
+            context, wallet, account, group, websocket_manager, health_check
+        )
+        latest_open_orders_observer = list(
+            [
+                oo_watcher
+                for oo_watcher in all_open_orders_watchers
+                if (
+                    spot_market.base == spot_market.base
+                    and spot_market.quote == spot_market.quote
+                )
+            ]
+        )[0]
 
-        inventory_watcher = mango.SpotInventoryAccountWatcher(
-            market, latest_account_observer, group_watcher, all_open_orders_watchers, cache_watcher)
+        inventory_watcher = mango.InventoryAccountWatcher(
+            spot_market,
+            latest_account_observer,
+            group_watcher,
+            all_open_orders_watchers,
+            cache_watcher,
+        )
         latest_orderbook_watcher = mango.build_orderbook_watcher(
-            context, websocket_manager, health_check, market)
-    elif isinstance(market, mango.PerpMarket):
+            context, websocket_manager, health_check, spot_market
+        )
+        latest_event_queue_watcher = mango.build_spot_event_queue_watcher(
+            context, websocket_manager, health_check, spot_market
+        )
+    elif mango.PerpMarket.isa(market):
+        perp_market = mango.PerpMarket.ensure(market)
         order_owner = account.address
-        inventory_watcher = mango.PerpInventoryAccountWatcher(
-            market, latest_account_observer, group_watcher, cache_watcher, group)
+
+        all_open_orders_watchers = __load_all_openorders_watchers(
+            context, wallet, account, group, websocket_manager, health_check
+        )
+
+        inventory_watcher = mango.InventoryAccountWatcher(
+            perp_market,
+            latest_account_observer,
+            group_watcher,
+            all_open_orders_watchers,
+            cache_watcher,
+        )
+
         latest_open_orders_observer = mango.build_perp_open_orders_watcher(
-            context, websocket_manager, health_check, market, account, group, account_subscription)
+            context,
+            websocket_manager,
+            health_check,
+            perp_market,
+            account,
+            group,
+            account_subscription,
+        )
         latest_orderbook_watcher = mango.build_orderbook_watcher(
-            context, websocket_manager, health_check, market)
+            context, websocket_manager, health_check, perp_market
+        )
+        latest_event_queue_watcher = mango.build_perp_event_queue_watcher(
+            context, websocket_manager, health_check, perp_market
+        )
     else:
         raise Exception(f"Could not determine type of market {market.symbol}")
 
-    model_state = ModelState(order_owner, market, group_watcher, latest_account_observer,
-                             latest_price_observer, latest_open_orders_observer,
-                             inventory_watcher, latest_orderbook_watcher)
+    model_state = ModelState(
+        order_owner,
+        market,
+        group_watcher,
+        latest_account_observer,
+        latest_price_observer,
+        latest_open_orders_observer,
+        inventory_watcher,
+        latest_orderbook_watcher,
+        latest_event_queue_watcher,
+    )
     return WebsocketModelStateBuilder(model_state)
