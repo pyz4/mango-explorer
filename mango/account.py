@@ -883,7 +883,7 @@ class Account(AddressableAccount):
                 )
 
                 quote_pos = slot.perp_account.quote_position / (
-                    10**self.shared_quote_token.decimals
+                    10 ** self.shared_quote_token.decimals
                 )
                 if abs(perp_bids_base_net) > abs(perp_asks_base_net):
                     perp_health_base = perp_bids_base_net

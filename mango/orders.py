@@ -145,9 +145,8 @@ class OrderType(enum.Enum):
 @dataclass(frozen=True)
 class Order:
     DefaultMatchLimit: typing.ClassVar[int] = 20
-    NoExpiration: typing.ClassVar[datetime] = datetime.fromtimestamp(0).astimezone(
-        timezone.utc
-    )
+    NoExpiration: typing.ClassVar[datetime] = None 
+	# datetime.fromtimestamp(0).astimezone( timezone.utc)
     id: int
     client_id: int
     owner: PublicKey
