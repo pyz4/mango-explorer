@@ -24,13 +24,18 @@ from .accountinfo import AccountInfo
 from .addressableaccount import AddressableAccount
 from .cache import Cache, PerpMarketCache, RootBankCache, MarketCache
 from .combinableinstructions import CombinableInstructions
+from .constants import SYSTEM_PROGRAM_ADDRESS
 from .context import Context
 from .encoding import encode_key
 from .group import Group, GroupSlot, GroupSlotPerpMarket
-from .instructions import build_deposit_instructions, build_withdraw_instructions
+from .instructions import (
+    build_mango_deposit_instructions,
+    build_mango_withdraw_instructions,
+)
 from .instrumentvalue import InstrumentValue
 from .layouts import layouts
 from .metadata import Metadata
+from .observables import Disposable
 from .openorders import OpenOrders
 from .orders import Side
 from .perpaccount import PerpAccount
@@ -39,8 +44,13 @@ from .placedorder import PlacedOrder
 from .tokens import Instrument, Token
 from .tokenaccount import TokenAccount
 from .tokenbank import TokenBank
+from .tokenoperations import build_create_associated_instructions_and_account
 from .version import Version
 from .wallet import Wallet
+from .websocketsubscription import (
+    WebSocketAccountSubscription,
+    WebSocketSubscriptionManager,
+)
 
 
 # # 🥭 ReferrerMemory class
@@ -98,6 +108,20 @@ class ReferrerMemory(AddressableAccount):
         if referrer_memory is None:
             raise Exception(f"ReferrerMemory account not found at address '{address}'")
         return referrer_memory
+
+    def subscribe(
+        self,
+        context: Context,
+        websocketmanager: WebSocketSubscriptionManager,
+        callback: typing.Callable[["ReferrerMemory"], None],
+    ) -> Disposable:
+        subscription = WebSocketAccountSubscription(
+            context, self.address, ReferrerMemory.parse
+        )
+        websocketmanager.add(subscription)
+        subscription.publisher.subscribe(on_next=callback)  # type: ignore[call-arg]
+
+        return subscription
 
     def __str__(self) -> str:
         return f"""« ReferrerMemory [{self.version}] {self.address}
@@ -560,6 +584,24 @@ class Account(AddressableAccount):
 
         return accounts[0]
 
+    def subscribe(
+        self,
+        context: Context,
+        websocketmanager: WebSocketSubscriptionManager,
+        callback: typing.Callable[["Account"], None],
+    ) -> Disposable:
+        group: Group = Group.load(context, self.group_address)
+        cache: Cache = group.fetch_cache(context)
+
+        def __parser(account_info: AccountInfo) -> Account:
+            return Account.parse(account_info, group, cache)
+
+        subscription = WebSocketAccountSubscription(context, self.address, __parser)
+        websocketmanager.add(subscription)
+        subscription.publisher.subscribe(on_next=callback)  # type: ignore[call-arg]
+
+        return subscription
+
     def deposit(
         self, context: Context, wallet: Wallet, value: InstrumentValue
     ) -> typing.Sequence[str]:
@@ -586,7 +628,7 @@ class Account(AddressableAccount):
         node_bank = root_bank.pick_node_bank(context)
 
         signers: CombinableInstructions = CombinableInstructions.from_wallet(wallet)
-        deposit = build_deposit_instructions(
+        deposit = build_mango_deposit_instructions(
             context, wallet, group, self, root_bank, node_bank, deposit_token_account
         )
 
@@ -597,13 +639,37 @@ class Account(AddressableAccount):
         self,
         context: Context,
         wallet: Wallet,
+        destination: PublicKey,
         value: InstrumentValue,
         allow_borrow: bool,
     ) -> typing.Sequence[str]:
-        token: Token = Token.ensure(value.token)
-        token_account = TokenAccount.fetch_or_create_largest_for_owner_and_token(
-            context, wallet.keypair, token
+        destination_info: typing.Optional[AccountInfo] = AccountInfo.load(
+            context, destination
         )
+        if destination_info is None:
+            raise Exception(f"Could not find wallet at address {destination}.")
+
+        if destination_info.owner != SYSTEM_PROGRAM_ADDRESS:
+            # This is not a root wallet account
+            raise Exception(
+                f"Can't withdraw to address {destination} - not a wallet address."
+            )
+
+        token: Token = Token.ensure(value.token)
+        token_account = TokenAccount.fetch_largest_for_owner_and_token(
+            context, destination, token
+        )
+
+        withdrawal_token_account: TokenAccount
+        create_ata = CombinableInstructions.empty()
+        if token_account is None:
+            (
+                create_ata,
+                token_account,
+            ) = build_create_associated_instructions_and_account(
+                context, wallet, destination, token
+            )
+
         withdrawal_token_account = TokenAccount(
             token_account.account_info,
             token_account.version,
@@ -617,7 +683,7 @@ class Account(AddressableAccount):
         node_bank = root_bank.pick_node_bank(context)
 
         signers: CombinableInstructions = CombinableInstructions.from_wallet(wallet)
-        withdraw = build_withdraw_instructions(
+        withdraw = build_mango_withdraw_instructions(
             context,
             wallet,
             group,
@@ -628,7 +694,7 @@ class Account(AddressableAccount):
             allow_borrow,
         )
 
-        all_instructions = signers + withdraw
+        all_instructions = signers + create_ata + withdraw
         return all_instructions.execute(context)
 
     def slot_by_instrument_or_none(
@@ -685,8 +751,8 @@ class Account(AddressableAccount):
                 ]
                 oo = OpenOrders.parse(
                     account_info,
-                    slot.base_instrument.decimals,
-                    self.shared_quote.base_instrument.decimals,
+                    Token.ensure(slot.base_instrument),
+                    Token.ensure(self.shared_quote.base_instrument),
                 )
                 spot_open_orders[str(slot.spot_open_orders)] = oo
         return spot_open_orders
@@ -734,7 +800,7 @@ class Account(AddressableAccount):
             )
 
             spot_open_orders: typing.Optional[OpenOrders] = None
-            spot_health_base: Decimal = Decimal(0)
+            spot_health_base: Decimal = slot.net_value.value
             spot_health_quote: Decimal = Decimal(0)
             spot_bids_base_net: Decimal = Decimal(0)
             spot_asks_base_net: Decimal = Decimal(0)
@@ -786,7 +852,7 @@ class Account(AddressableAccount):
                     slot.net_value.value + spot_open_orders.base_token_free
                 )
 
-                if abs(spot_bids_base_net) > abs(spot_asks_base_net):
+                if spot_bids_base_net.copy_abs() > spot_asks_base_net.copy_abs():
                     spot_health_base = spot_bids_base_net
                     spot_health_quote = spot_open_orders.quote_token_free
                 else:
@@ -885,7 +951,7 @@ class Account(AddressableAccount):
                 quote_pos = slot.perp_account.quote_position / (
                     10 ** self.shared_quote_token.decimals
                 )
-                if abs(perp_bids_base_net) > abs(perp_asks_base_net):
+                if perp_bids_base_net.copy_abs() > perp_asks_base_net.copy_abs():
                     perp_health_base = perp_bids_base_net
                     perp_health_quote = (
                         (quote_pos + unsettled_funding)
@@ -979,6 +1045,7 @@ class Account(AddressableAccount):
                 "SpotOpenValue": base_open_total_value,
                 "BaseUnsettled": base_open_unsettled,
                 "BaseLocked": base_open_locked,
+                "BaseLockedValue": base_open_locked * price.value,
                 "QuoteUnsettled": quote_open_unsettled,
                 "QuoteLocked": quote_open_locked,
                 "PerpPositionSize": perp_position,
@@ -1028,7 +1095,7 @@ class Account(AddressableAccount):
             liabilities = quote
 
         spot_borrow_health = (
-            non_quote["SpotBorrowValue"]
+            non_quote.loc[non_quote["SpotHealthBaseValue"] < 0, "SpotHealthBaseValue"]
             * non_quote[f"Spot{weighting_name}LiabilityWeight"]
         ).sum()
 
@@ -1040,7 +1107,7 @@ class Account(AddressableAccount):
         liabilities += spot_borrow_health + perp_health_base_liability
 
         spot_deposit_health = (
-            (non_quote["SpotDepositValue"] + non_quote["QuoteLocked"])
+            (non_quote.loc[non_quote["SpotHealthBaseValue"] > 0, "SpotHealthBaseValue"])
             * non_quote[f"Spot{weighting_name}AssetWeight"]
         ).sum()
 
@@ -1074,6 +1141,7 @@ class Account(AddressableAccount):
 
         assets += (
             non_quote["SpotDepositValue"].sum()
+            + non_quote["BaseLockedValue"].sum()
             + non_quote["PerpAsset"].sum()
             + non_quote["QuoteUnsettled"].sum()
             + non_quote["QuoteLocked"].sum()

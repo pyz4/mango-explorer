@@ -17,6 +17,7 @@ import logging
 import rx.operators
 import typing
 
+from datetime import datetime
 from decimal import Decimal
 from pyserum.market.market import Market as PySerumMarket
 from pyserum.market.orderbook import OrderBook as PySerumOrderBook
@@ -27,13 +28,14 @@ from .accountinfo import AccountInfo
 from .combinableinstructions import CombinableInstructions
 from .constants import SYSTEM_PROGRAM_ADDRESS
 from .context import Context
+from .datetimes import utc_now
 from .group import GroupSlot, Group
 from .instructions import (
     build_serum_consume_events_instructions,
+    build_spot_cancel_order_instructions,
     build_spot_place_order_instructions,
-    build_cancel_spot_order_instructions,
     build_spot_settle_instructions,
-    build_spot_openorders_instructions,
+    build_spot_create_openorders_instructions,
 )
 from .loadedmarket import LoadedMarket
 from .lotsizeconverter import LotSizeConverter, RaisingLotSizeConverter
@@ -93,8 +95,14 @@ class SpotMarket(LoadedMarket):
     @staticmethod
     def ensure(market: Market) -> "SpotMarket":
         if not SpotMarket.isa(market):
-            raise Exception(f"Market for {market.symbol} is not a Spot market")
+            raise Exception(
+                f"Market for {market.fully_qualified_symbol} is not a Spot market"
+            )
         return typing.cast(SpotMarket, market)
+
+    @property
+    def fully_qualified_symbol(self) -> str:
+        return f"spot:{self.symbol}"
 
     @property
     def bids_address(self) -> PublicKey:
@@ -272,7 +280,7 @@ class SpotMarketInstructionBuilder(MarketInstructionBuilder):
         if self.open_orders_address is None:
             return CombinableInstructions.empty()
 
-        return build_cancel_spot_order_instructions(
+        return build_spot_cancel_order_instructions(
             self.context,
             self.wallet,
             self.group,
@@ -292,21 +300,38 @@ class SpotMarketInstructionBuilder(MarketInstructionBuilder):
         if order.match_limit != Order.DefaultMatchLimit:
             self._logger.warning("Ignoring match_limit - not supported on Spot markets")
 
-        create_open_orders: bool = False
         slot = self.group.slot_by_spot_market_address(self.spot_market.address)
         market_index = slot.index
         open_orders_address: typing.Optional[
             PublicKey
         ] = self.account.spot_open_orders_by_index[market_index]
 
+        instructions = CombinableInstructions.empty()
         if open_orders_address is None:
             # Spot OpenOrders accounts use a PDA as of v3.3
             open_orders_address = self.spot_market.derive_open_orders_address(
                 self.context, self.account
             )
-            create_open_orders = True
+            instructions += build_spot_create_openorders_instructions(
+                self.context,
+                self.wallet,
+                self.group,
+                self.account,
+                self.spot_market,
+                open_orders_address,
+            )
 
-        instructions = build_spot_place_order_instructions(
+            # This line is a little nasty. Now that we know we have an OpenOrders account at
+            # this address, update the IAccount so that future uses (like later in this
+            # method) have access to it in the right place.
+            #
+            # This might cause problems if this instruction is never sent or the transaction
+            # fails though.
+            self.account.update_spot_open_orders_for_market(
+                market_index, open_orders_address
+            )
+
+        instructions += build_spot_place_order_instructions(
             self.context,
             self.wallet,
             self.group,
@@ -319,13 +344,6 @@ class SpotMarketInstructionBuilder(MarketInstructionBuilder):
             order.quantity,
             order.client_id,
             self.fee_discount_token_address,
-            create_open_orders,
-        )
-
-        # This line is a little nasty. Now that we know we have an OpenOrders account at this address, update
-        # the IAccount so that future uses (like later in this method) have access to it in the right place.
-        self.account.update_spot_open_orders_for_market(
-            market_index, open_orders_address
         )
 
         return instructions
@@ -400,7 +418,7 @@ class SpotMarketInstructionBuilder(MarketInstructionBuilder):
         open_orders_address: PublicKey = self.spot_market.derive_open_orders_address(
             self.context, self.account
         )
-        return build_spot_openorders_instructions(
+        return build_spot_create_openorders_instructions(
             self.context,
             self.wallet,
             self.group,
@@ -410,7 +428,7 @@ class SpotMarketInstructionBuilder(MarketInstructionBuilder):
         )
 
     def __str__(self) -> str:
-        return f"« SpotMarketInstructionBuilder [{self.spot_market.symbol}] »"
+        return f"« SpotMarketInstructionBuilder [{self.spot_market.fully_qualified_symbol}] »"
 
 
 # # 🥭 SpotMarketOperations class
@@ -459,7 +477,9 @@ class SpotMarketOperations(MarketOperations):
     def cancel_order(
         self, order: Order, ok_if_missing: bool = False
     ) -> typing.Sequence[str]:
-        self._logger.info(f"Cancelling {self.spot_market.symbol} order {order}.")
+        self._logger.info(
+            f"Cancelling {self.spot_market.fully_qualified_symbol} order {order}."
+        )
         signers: CombinableInstructions = CombinableInstructions.from_wallet(
             self.wallet
         )
@@ -478,7 +498,7 @@ class SpotMarketOperations(MarketOperations):
     def place_order(
         self, order: Order, crank_limit: Decimal = Decimal(5)
     ) -> typing.Sequence[str]:
-        client_id: int = self.context.generate_client_id()
+        client_id: int = order.client_id or self.context.generate_client_id()
         signers: CombinableInstructions = CombinableInstructions.from_wallet(
             self.wallet
         )
@@ -486,7 +506,9 @@ class SpotMarketOperations(MarketOperations):
         order_with_client_id: Order = order.with_update(
             client_id=client_id
         ).with_update(owner=self.open_orders_address or SYSTEM_PROGRAM_ADDRESS)
-        self._logger.info(f"Placing {self.spot_market.symbol} order {order}.")
+        self._logger.info(
+            f"Placing {self.spot_market.fully_qualified_symbol} order {order}."
+        )
         place: CombinableInstructions = (
             self.market_instruction_builder.build_place_order_instructions(
                 order_with_client_id
@@ -547,14 +569,14 @@ class SpotMarketOperations(MarketOperations):
     def load_orderbook(self) -> OrderBook:
         return self.spot_market.fetch_orderbook(self.context)
 
-    def load_my_orders(self, include_expired: bool = False) -> typing.Sequence[Order]:
+    def load_my_orders(
+        self, cutoff: typing.Optional[datetime] = utc_now()
+    ) -> typing.Sequence[Order]:
         if not self.open_orders_address:
             return []
 
         orderbook: OrderBook = self.load_orderbook()
-        return orderbook.all_orders_for_owner(
-            self.open_orders_address, include_expired=include_expired
-        )
+        return orderbook.all_orders_for_owner(self.open_orders_address, cutoff=cutoff)
 
     def _build_crank(
         self, limit: Decimal = Decimal(32), add_self: bool = False
@@ -577,7 +599,7 @@ class SpotMarketOperations(MarketOperations):
         )
 
     def __str__(self) -> str:
-        return f"« SpotMarketOperations [{self.spot_market.symbol}] »"
+        return f"« SpotMarketOperations [{self.spot_market.fully_qualified_symbol}] »"
 
 
 # # 🥭 SpotMarketStub class
@@ -605,6 +627,10 @@ class SpotMarketStub(Market):
         self.base: Token = base
         self.quote: Token = quote
         self.group_address: PublicKey = group_address
+
+    @property
+    def fully_qualified_symbol(self) -> str:
+        return f"spot:{self.symbol}"
 
     def load(self, context: Context, group: typing.Optional[Group]) -> SpotMarket:
         actual_group: Group = group or Group.load(context, self.group_address)

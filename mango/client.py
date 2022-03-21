@@ -355,6 +355,7 @@ class TransactionMonitor(metaclass=abc.ABCMeta):
 
         self.slot_holder: SlotHolder = SlotHolder()
 
+    @abc.abstractmethod
     def monitor(self, signature: str) -> None:
         raise NotImplementedError(
             "TransactionMonitor.monitor() is not implemented on the base type."
@@ -622,6 +623,11 @@ class CompoundRPCCaller(HTTPProvider):
         self.name: str = name
         self.on_provider_change: typing.Callable[[], None] = lambda: None
 
+        # Some libraries (like the SPL Token Library) depend on `endpoint_uri` existing on
+        # a `Provider`, and static typing complains if we use a property instead of a
+        # variable. We add it here and keep it up to date when we switch inner providers.
+        self.endpoint_uri = providers[0].endpoint_uri
+
     @property
     def current(self) -> RPCCaller:
         return self.__providers[0]
@@ -641,6 +647,7 @@ class CompoundRPCCaller(HTTPProvider):
         # resubmit the transaction.
         if len(self.__providers) > 1:
             self.__providers = [*self.__providers[1:], *self.__providers[:1]]
+            self.endpoint_uri = self.__providers[0].endpoint_uri
             self.on_provider_change()
         self._logger.debug(f"Told to shift provider - now using: {self.__providers[0]}")
 
@@ -656,6 +663,7 @@ class CompoundRPCCaller(HTTPProvider):
                         *self.__providers[successful_index:],
                         *self.__providers[:successful_index],
                     ]
+                    self.endpoint_uri = self.__providers[0].endpoint_uri
                     self.on_provider_change()
                     self._logger.debug(
                         f"Shifted provider - now using: {self.__providers[0]}"
@@ -973,6 +981,7 @@ class BetterClient:
         transaction: Transaction,
         *signers: Keypair,
         opts: TxOpts = TxOpts(preflight_commitment=UnspecifiedCommitment),
+        recent_blockhash: typing.Optional[Blockhash] = None,
     ) -> str:
         # This method is an exception to the normal exception-handling to fail over to the next RPC provider.
         #
@@ -1006,7 +1015,10 @@ class BetterClient:
                 )
 
                 response = self.compatible_client.send_transaction(
-                    transaction, *signers, opts=proper_opts
+                    transaction,
+                    *signers,
+                    opts=proper_opts,
+                    recent_blockhash=recent_blockhash,
                 )
                 signature: str = str(response["result"])
                 self._logger.debug(f"Transaction signature: {signature}")

@@ -16,18 +16,21 @@
 import rx.operators
 import typing
 
+from datetime import datetime
 from decimal import Decimal
 from pyserum.market.market import Market as PySerumMarket
 from pyserum.market.orderbook import OrderBook as PySerumOrderBook
 from solana.publickey import PublicKey
+
+from mango.datetimes import utc_now
 
 from .accountinfo import AccountInfo
 from .combinableinstructions import CombinableInstructions
 from .constants import SYSTEM_PROGRAM_ADDRESS
 from .context import Context
 from .instructions import (
-    build_create_serum_open_orders_instructions,
     build_serum_consume_events_instructions,
+    build_serum_create_openorders_instructions,
     build_serum_settle_instructions,
     build_serum_place_order_instructions,
 )
@@ -89,8 +92,14 @@ class SerumMarket(LoadedMarket):
     @staticmethod
     def ensure(market: Market) -> "SerumMarket":
         if not SerumMarket.isa(market):
-            raise Exception(f"Market for {market.symbol} is not a Serum market")
+            raise Exception(
+                f"Market for {market.fully_qualified_symbol} is not a Serum market"
+            )
         return typing.cast(SerumMarket, market)
+
+    @property
+    def fully_qualified_symbol(self) -> str:
+        return f"serum:{self.symbol}"
 
     @property
     def bids_address(self) -> PublicKey:
@@ -126,8 +135,8 @@ class SerumMarket(LoadedMarket):
             self.address,
             owner,
             context.serum_program_address,
-            self.base.decimals,
-            self.quote.decimals,
+            self.base,
+            self.quote,
         )
         if len(all_open_orders) == 0:
             return None
@@ -243,8 +252,8 @@ class SerumMarketInstructionBuilder(MarketInstructionBuilder):
             serum_market.address,
             wallet.address,
             context.serum_program_address,
-            serum_market.base.decimals,
-            serum_market.quote.decimals,
+            serum_market.base,
+            serum_market.quote,
         )
         if len(all_open_orders) > 0:
             open_orders_address = all_open_orders[0].address
@@ -380,7 +389,7 @@ class SerumMarketInstructionBuilder(MarketInstructionBuilder):
         )
 
     def build_create_openorders_instructions(self) -> CombinableInstructions:
-        create_open_orders = build_create_serum_open_orders_instructions(
+        create_open_orders = build_serum_create_openorders_instructions(
             self.context, self.wallet, self.raw_market
         )
         self.open_orders_address = create_open_orders.signers[0].public_key
@@ -426,7 +435,9 @@ class SerumMarketOperations(MarketOperations):
     def cancel_order(
         self, order: Order, ok_if_missing: bool = False
     ) -> typing.Sequence[str]:
-        self._logger.info(f"Cancelling {self.serum_market.symbol} order {order}.")
+        self._logger.info(
+            f"Cancelling {self.serum_market.fully_qualified_symbol} order {order}."
+        )
         signers: CombinableInstructions = CombinableInstructions.from_wallet(
             self.wallet
         )
@@ -444,7 +455,7 @@ class SerumMarketOperations(MarketOperations):
     def place_order(
         self, order: Order, crank_limit: Decimal = Decimal(5)
     ) -> typing.Sequence[str]:
-        client_id: int = self.context.generate_client_id()
+        client_id: int = order.client_id or self.context.generate_client_id()
         signers: CombinableInstructions = CombinableInstructions.from_wallet(
             self.wallet
         )
@@ -463,7 +474,7 @@ class SerumMarketOperations(MarketOperations):
             order_type=order.order_type,
         )
         self._logger.info(
-            f"Placing {self.serum_market.symbol} order {order_with_client_id}."
+            f"Placing {self.serum_market.fully_qualified_symbol} order {order_with_client_id}."
         )
         place: CombinableInstructions = (
             self.market_instruction_builder.build_place_order_instructions(
@@ -512,15 +523,15 @@ class SerumMarketOperations(MarketOperations):
     def load_orderbook(self) -> OrderBook:
         return self.serum_market.fetch_orderbook(self.context)
 
-    def load_my_orders(self, include_expired: bool = False) -> typing.Sequence[Order]:
+    def load_my_orders(
+        self, cutoff: typing.Optional[datetime] = utc_now()
+    ) -> typing.Sequence[Order]:
         open_orders_address = self.market_instruction_builder.open_orders_address
         if not open_orders_address:
             return []
 
         orderbook: OrderBook = self.load_orderbook()
-        return orderbook.all_orders_for_owner(
-            open_orders_address, include_expired=include_expired
-        )
+        return orderbook.all_orders_for_owner(open_orders_address, cutoff=cutoff)
 
     def _build_crank(
         self, limit: Decimal = Decimal(32), add_self: bool = False
@@ -546,7 +557,7 @@ class SerumMarketOperations(MarketOperations):
         )
 
     def __str__(self) -> str:
-        return f"""« SerumMarketOperations [{self.serum_market.symbol}] »"""
+        return f"""« SerumMarketOperations [{self.serum_market.fully_qualified_symbol}] »"""
 
 
 # # 🥭 SerumMarketStub class
@@ -572,6 +583,10 @@ class SerumMarketStub(Market):
         )
         self.base: Token = base
         self.quote: Token = quote
+
+    @property
+    def fully_qualified_symbol(self) -> str:
+        return f"serum:{self.symbol}"
 
     def load(self, context: Context) -> SerumMarket:
         underlying_serum_market: PySerumMarket = PySerumMarket.load(

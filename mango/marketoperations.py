@@ -18,11 +18,13 @@ import abc
 import logging
 import typing
 
+from datetime import datetime
 from decimal import Decimal
 from solana.publickey import PublicKey
 
 from .combinableinstructions import CombinableInstructions
 from .constants import SYSTEM_PROGRAM_ADDRESS
+from .datetimes import utc_now
 from .loadedmarket import LoadedMarket
 from .lotsizeconverter import NullLotSizeConverter
 from .markets import InventorySource
@@ -60,6 +62,7 @@ from .orders import Order, OrderBook, OrderType, Side
 class MarketInstructionBuilder(metaclass=abc.ABCMeta):
     def __init__(self) -> None:
         self._logger: logging.Logger = logging.getLogger(self.__class__.__name__)
+        self.open_orders_address: typing.Optional[PublicKey] = None
 
     @abc.abstractmethod
     def build_cancel_order_instructions(
@@ -120,7 +123,7 @@ class MarketOperations(metaclass=abc.ABCMeta):
 
     @property
     def symbol(self) -> str:
-        return self.market.symbol
+        return self.market.fully_qualified_symbol
 
     @property
     def inventory_source(self) -> InventorySource:
@@ -149,7 +152,9 @@ class MarketOperations(metaclass=abc.ABCMeta):
         )
 
     @abc.abstractmethod
-    def load_my_orders(self, include_expired: bool = False) -> typing.Sequence[Order]:
+    def load_my_orders(
+        self, cutoff: typing.Optional[datetime] = utc_now()
+    ) -> typing.Sequence[Order]:
         raise NotImplementedError(
             "MarketOperations.load_my_orders() is not implemented on the base type."
         )
@@ -269,9 +274,13 @@ class NullMarketOperations(MarketOperations):
         return []
 
     def load_orderbook(self) -> OrderBook:
-        return OrderBook(self.market.symbol, NullLotSizeConverter(), [], [])
+        return OrderBook(
+            self.market.fully_qualified_symbol, NullLotSizeConverter(), [], []
+        )
 
-    def load_my_orders(self, include_expired: bool = False) -> typing.Sequence[Order]:
+    def load_my_orders(
+        self, cutoff: typing.Optional[datetime] = utc_now()
+    ) -> typing.Sequence[Order]:
         return []
 
     def settle(self) -> typing.Sequence[str]:
@@ -286,5 +295,21 @@ class NullMarketOperations(MarketOperations):
     def ensure_openorders(self) -> PublicKey:
         return SYSTEM_PROGRAM_ADDRESS
 
+    def market_buy(
+        self, quantity: Decimal, max_slippage: Decimal
+    ) -> typing.Sequence[str]:
+        self._logger.info(
+            f"[Dry Run] Not market buying {quantity} with max slippage {max_slippage}."
+        )
+        return []
+
+    def market_sell(
+        self, quantity: Decimal, max_slippage: Decimal
+    ) -> typing.Sequence[str]:
+        self._logger.info(
+            f"[Dry Run] Not market selling {quantity} with max slippage {max_slippage}."
+        )
+        return []
+
     def __str__(self) -> str:
-        return f"""« NullMarketOperations [{self.market.symbol}] »"""
+        return f"""« NullMarketOperations [{self.market.fully_qualified_symbol}] »"""

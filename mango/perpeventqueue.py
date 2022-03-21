@@ -26,8 +26,13 @@ from .context import Context
 from .layouts import layouts
 from .lotsizeconverter import LotSizeConverter
 from .metadata import Metadata
+from .observables import Disposable
 from .orders import Side
 from .version import Version
+from .websocketsubscription import (
+    WebSocketAccountSubscription,
+    WebSocketSubscriptionManager,
+)
 
 
 # # 🥭 PerpEvent class
@@ -263,6 +268,7 @@ class PerpEventQueue(AddressableAccount):
         account_info: AccountInfo,
         version: Version,
         meta_data: Metadata,
+        lot_size_converter: LotSizeConverter,
         head: Decimal,
         count: Decimal,
         sequence_number: Decimal,
@@ -273,6 +279,7 @@ class PerpEventQueue(AddressableAccount):
         self.version: Version = version
 
         self.meta_data: Metadata = meta_data
+        self.lot_size_converter: LotSizeConverter = lot_size_converter
         self.head: Decimal = head
         self.count: Decimal = count
         self.sequence_number: Decimal = sequence_number
@@ -311,6 +318,7 @@ class PerpEventQueue(AddressableAccount):
             account_info,
             version,
             meta_data,
+            lot_size_converter,
             head,
             count,
             seq_num,
@@ -353,11 +361,46 @@ class PerpEventQueue(AddressableAccount):
 
         return distinct
 
+    @property
+    def events(self) -> typing.Sequence[PerpEvent]:
+        return [*self.processed_events, *self.unprocessed_events]
+
+    @property
+    def fills(self) -> typing.Sequence[PerpFillEvent]:
+        fills: typing.List[PerpFillEvent] = []
+        for event in self.events:
+            if isinstance(event, PerpFillEvent):
+                fills += [event]
+        return fills
+
+    @property
+    def liquidations(self) -> typing.Sequence[PerpLiquidateEvent]:
+        liquidations: typing.List[PerpLiquidateEvent] = []
+        for event in self.events:
+            if isinstance(event, PerpLiquidateEvent):
+                liquidations += [event]
+        return liquidations
+
+    def subscribe(
+        self,
+        context: Context,
+        websocketmanager: WebSocketSubscriptionManager,
+        callback: typing.Callable[["PerpEventQueue"], None],
+    ) -> Disposable:
+        def __parser(account_info: AccountInfo) -> PerpEventQueue:
+            return PerpEventQueue.parse(account_info, self.lot_size_converter)
+
+        subscription = WebSocketAccountSubscription(context, self.address, __parser)
+        websocketmanager.add(subscription)
+        subscription.publisher.subscribe(on_next=callback)  # type: ignore[call-arg]
+
+        return subscription
+
     def events_for_account(
         self, mango_account_address: PublicKey
     ) -> typing.Sequence[PerpEvent]:
         events: typing.List[PerpEvent] = []
-        for event in [*self.processed_events, *self.unprocessed_events]:
+        for event in self.events:
             if mango_account_address in event.accounts_to_crank:
                 events += [event]
         return events

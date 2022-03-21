@@ -61,7 +61,7 @@ class WebsocketModelStateBuilder(ModelStateBuilder):
         return self.model_state
 
     def __str__(self) -> str:
-        return f"« WebsocketModelStateBuilder for market '{self.model_state.market.symbol}' »"
+        return f"« WebsocketModelStateBuilder for market '{self.model_state.market.fully_qualified_symbol}' »"
 
 
 # # 🥭 PollingModelStateBuilder class
@@ -197,7 +197,7 @@ class SerumPollingModelStateBuilder(PollingModelStateBuilder):
         cache: mango.Cache = mango.Cache.parse(account_infos[1])
         account: mango.Account = mango.Account.parse(account_infos[2], group, cache)
         placed_orders_container: mango.PlacedOrdersContainer = mango.OpenOrders.parse(
-            account_infos[3], self.market.base.decimals, self.market.quote.decimals
+            account_infos[3], self.market.base, self.market.quote
         )
 
         # Serum markets don't accrue MNGO liquidity incentives
@@ -247,9 +247,7 @@ class SerumPollingModelStateBuilder(PollingModelStateBuilder):
         )
 
     def __str__(self) -> str:
-        return (
-            f"""« SerumPollingModelStateBuilder for market '{self.market.symbol}' »"""
-        )
+        return f"""« SerumPollingModelStateBuilder for market '{self.market.fully_qualified_symbol}' »"""
 
 
 # # 🥭 SpotPollingModelStateBuilder class
@@ -320,8 +318,8 @@ class SpotPollingModelStateBuilder(PollingModelStateBuilder):
                 )
                 open_orders: mango.OpenOrders = mango.OpenOrders.parse(
                     account_info,
-                    basket_token.base_instrument.decimals,
-                    account.shared_quote_token.decimals,
+                    Token.ensure(basket_token.base_instrument),
+                    account.shared_quote_token,
                 )
                 all_open_orders[str(basket_token.spot_open_orders)] = open_orders
 
@@ -372,7 +370,7 @@ class SpotPollingModelStateBuilder(PollingModelStateBuilder):
         )
 
     def __str__(self) -> str:
-        return f"""« SpotPollingModelStateBuilder for market '{self.market.symbol}' »"""
+        return f"""« SpotPollingModelStateBuilder for market '{self.market.fully_qualified_symbol}' »"""
 
 
 # # 🥭 PerpPollingModelStateBuilder class
@@ -440,8 +438,8 @@ class PerpPollingModelStateBuilder(PollingModelStateBuilder):
                 )
                 open_orders: mango.OpenOrders = mango.OpenOrders.parse(
                     account_info,
-                    basket_token.base_instrument.decimals,
-                    account.shared_quote_token.decimals,
+                    Token.ensure(basket_token.base_instrument),
+                    account.shared_quote_token,
                 )
                 all_open_orders[str(basket_token.spot_open_orders)] = open_orders
 
@@ -490,4 +488,4 @@ class PerpPollingModelStateBuilder(PollingModelStateBuilder):
         )
 
     def __str__(self) -> str:
-        return f"""« PerpPollingModelStateBuilder for market '{self.market.symbol}' »"""
+        return f"""« PerpPollingModelStateBuilder for market '{self.market.fully_qualified_symbol}' »"""

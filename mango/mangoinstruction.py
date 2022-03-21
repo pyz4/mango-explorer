@@ -399,7 +399,6 @@ class MangoInstruction:
         elif instruction_type == InstructionType.SetOracle:
             pass
         elif instruction_type == InstructionType.SettleFunds:
-            additional_data = f"order ID: {self.instruction_data.order_id}, side: {Side.from_value(self.instruction_data.side)}"
             pass
         elif instruction_type == InstructionType.CancelSpotOrder:
             additional_data = f"order ID: {self.instruction_data.order_id}, side: {Side.from_value(self.instruction_data.side)}"
@@ -476,7 +475,7 @@ class MangoInstruction:
         elif instruction_type == InstructionType.UpgradeMangoAccountV0V1:
             pass
         elif instruction_type == InstructionType.CancelPerpOrderSide:
-            pass
+            additional_data = f"side: {Side.from_value(self.instruction_data.side)}, limit: {self.instruction_data.limit}"
         elif instruction_type == InstructionType.SetDelegate:
             pass
         elif instruction_type == InstructionType.ChangeSpotMarketParams:

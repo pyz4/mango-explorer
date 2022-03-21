@@ -23,7 +23,12 @@ from .accountinfo import AccountInfo
 from .addressableaccount import AddressableAccount
 from .context import Context
 from .layouts import layouts
+from .observables import Disposable
 from .version import Version
+from .websocketsubscription import (
+    WebSocketAccountSubscription,
+    WebSocketSubscriptionManager,
+)
 
 
 # # 🥭 SerumEventFlags class
@@ -230,8 +235,34 @@ class SerumEventQueue(AddressableAccount):
         return distinct
 
     @property
+    def events(self) -> typing.Sequence[SerumEvent]:
+        return [*self.processed_events, *self.unprocessed_events]
+
+    @property
+    def fills(self) -> typing.Sequence[SerumEvent]:
+        fills: typing.List[SerumEvent] = []
+        for event in self.events:
+            if event.event_flags.fill:
+                fills += [event]
+        return fills
+
+    @property
     def capacity(self) -> int:
         return len(self.unprocessed_events) + len(self.processed_events)
+
+    def subscribe(
+        self,
+        context: Context,
+        websocketmanager: WebSocketSubscriptionManager,
+        callback: typing.Callable[["SerumEventQueue"], None],
+    ) -> Disposable:
+        subscription = WebSocketAccountSubscription(
+            context, self.address, SerumEventQueue.parse
+        )
+        websocketmanager.add(subscription)
+        subscription.publisher.subscribe(on_next=callback)  # type: ignore[call-arg]
+
+        return subscription
 
     def __str__(self) -> str:
         unprocessed_events = (

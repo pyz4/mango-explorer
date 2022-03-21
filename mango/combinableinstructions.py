@@ -13,14 +13,20 @@
 #   [Github](https://github.com/blockworks-foundation)
 #   [Email](mailto:hello@blockworks.foundation)
 
+import asyncio
 import logging
+import traceback
 import typing
 
+from decimal import Decimal
 from solana.blockhash import Blockhash
+from solana.rpc.commitment import Finalized
 from solana.keypair import Keypair
 from solana.publickey import PublicKey
 from solana.transaction import Transaction, TransactionInstruction
 from solana.utils import shortvec_encoding as shortvec
+
+from mango.constants import SOL_DECIMAL_DIVISOR
 
 from .context import Context
 from .instructionreporter import InstructionReporter
@@ -272,6 +278,10 @@ class CombinableInstructions:
             signers=all_signers, instructions=all_instructions
         )
 
+    @property
+    def is_empty(self) -> bool:
+        return len(self.signers) == 0 and len(self.instructions) == 0
+
     def execute(
         self, context: Context, on_exception_continue: bool = False
     ) -> typing.Sequence[str]:
@@ -298,28 +308,96 @@ class CombinableInstructions:
                 if on_exception_continue:
                     self._logger.error(
                         f"""[{context.name}] Error executing chunk {index} (instructions {starts_at} to {starts_at + len(chunk)}) of CombinableInstruction.
-{exception}"""
+{traceback.format_exc()}"""
                     )
                 else:
                     raise exception
 
         return results
 
-    async def execute_async(
-        self, context: Context, on_exception_continue: bool = False
-    ) -> typing.Sequence[str]:
-        return self.execute(context, on_exception_continue)
+    async def execute_async(self, context: Context) -> typing.Sequence[str]:
+        async def __execute_chunk(
+            chunk_index: int,
+            offset_start: int,
+            blockhash: Blockhash,
+            instructions: typing.Sequence[TransactionInstruction],
+        ) -> str:
+            transaction = Transaction()
+            transaction.instructions.extend(instructions)
+            try:
+                return context.client.send_transaction(
+                    transaction, *self.signers, recent_blockhash=blockhash
+                )
+            except Exception as exception:
+                self._logger.error(
+                    f"""[{context.name}] Error executing chunk {chunk_index} (instructions {offset_start} to {offset_start + len(chunk)}) of CombinableInstruction.
+{traceback.format_exc()}"""
+                )
+                raise exception
 
-    def __str__(self) -> str:
+        chunks: typing.Sequence[
+            typing.Sequence[TransactionInstruction]
+        ] = _split_instructions_into_chunks(context, self.signers, self.instructions)
+
+        if len(chunks) == 1 and len(chunks[0]) == 0:
+            self._logger.info("No instructions to run.")
+            return []
+
+        if len(chunks) > 1:
+            self._logger.info(f"Running instructions in {len(chunks)} transactions.")
+
+        blockhash = context.client.get_recent_blockhash(commitment=Finalized)
+        coroutines: typing.List[typing.Coroutine[None, None, str]] = []
+        for index, chunk in enumerate(chunks):
+            starts_at = sum(len(ch) for ch in chunks[0:index])
+            coroutines += [__execute_chunk(index, starts_at, blockhash, chunk)]
+
+        return await asyncio.gather(*coroutines)
+
+    def cost_to_execute(self, context: Context) -> Decimal:
+        # getFees() is deprecated and will be replaced by getFeeForMessage() at some point.
+        # getFeeForMessage() is not fully available yet though.
+        fee_response = context.client.compatible_client.get_fees()
+        # fee_response should look like:
+        # {
+        #   "jsonrpc": "2.0",
+        #   "result": {
+        #     "context": {
+        #       "slot": 1
+        #     },
+        #     "value": {
+        #       "blockhash": "CSymwgTNX1j3E4qhKfJAUE41nBWEwXufoYryPbkde5RR",
+        #       "feeCalculator": {
+        #         "lamportsPerSignature": 5000
+        #       },
+        #       "lastValidSlot": 297,
+        #       "lastValidBlockHeight": 296
+        #     }
+        #   },
+        #   "id": 1
+        # }
+        number_of_signatures = len(self.signers)
+        lamports_per_signature = fee_response["result"]["value"]["feeCalculator"][
+            "lamportsPerSignature"
+        ]
+
+        fee_in_lamports = Decimal(number_of_signatures) * Decimal(
+            lamports_per_signature
+        )
+        return fee_in_lamports / SOL_DECIMAL_DIVISOR
+
+    def report(self, instruction_reporter: InstructionReporter) -> str:
         report: typing.List[str] = []
         for index, signer in enumerate(self.signers):
             report += [f"Signer[{index}]: {signer.public_key}"]
 
-        instruction_reporter: InstructionReporter = InstructionReporter()
         for instruction in self.instructions:
             report += [instruction_reporter.report(instruction)]
 
         return "\n".join(report)
+
+    def __str__(self) -> str:
+        return self.report(InstructionReporter())
 
     def __repr__(self) -> str:
         return f"{self}"

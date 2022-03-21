@@ -21,7 +21,10 @@ from solana.keypair import Keypair
 from solana.publickey import PublicKey
 from solana.rpc.types import TokenAccountOpts
 from spl.token.client import Token as SplToken
-from spl.token.constants import TOKEN_PROGRAM_ID
+from spl.token.constants import (
+    ASSOCIATED_TOKEN_PROGRAM_ID,
+    TOKEN_PROGRAM_ID,
+)
 
 from .accountinfo import AccountInfo
 from .addressableaccount import AddressableAccount
@@ -30,9 +33,14 @@ from .context import Context
 from .instrumentlookup import InstrumentLookup
 from .instrumentvalue import InstrumentValue
 from .layouts import layouts
+from .observables import Disposable
 from .tokens import Instrument, Token
 from .version import Version
 from .wallet import Wallet
+from .websocketsubscription import (
+    WebSocketAccountSubscription,
+    WebSocketSubscriptionManager,
+)
 
 
 # # 🥭 TokenAccount class
@@ -49,6 +57,15 @@ class TokenAccount(AddressableAccount):
         self.version: Version = version
         self.owner: PublicKey = owner
         self.value: InstrumentValue = value
+
+    @staticmethod
+    def derive_associated_token_address(owner: PublicKey, token: Token) -> PublicKey:
+        address, _ = PublicKey.find_program_address(
+            seeds=[bytes(owner), bytes(TOKEN_PROGRAM_ID), bytes(token.mint)],
+            program_id=ASSOCIATED_TOKEN_PROGRAM_ID,
+        )
+
+        return address
 
     @staticmethod
     def create(context: Context, account: Keypair, token: Token) -> "TokenAccount":
@@ -102,27 +119,6 @@ class TokenAccount(AddressableAccount):
                 or token_account.value.value > largest_account.value.value
             ):
                 largest_account = token_account
-
-        return largest_account
-
-    @staticmethod
-    def fetch_or_create_largest_for_owner_and_token(
-        context: Context, account: Keypair, token: Token
-    ) -> "TokenAccount":
-        all_accounts = TokenAccount.fetch_all_for_owner_and_token(
-            context, account.public_key, token
-        )
-
-        largest_account: typing.Optional[TokenAccount] = None
-        for token_account in all_accounts:
-            if (
-                largest_account is None
-                or token_account.value.value > largest_account.value.value
-            ):
-                largest_account = token_account
-
-        if largest_account is None:
-            return TokenAccount.create(context, account, token)
 
         return largest_account
 
@@ -207,6 +203,23 @@ class TokenAccount(AddressableAccount):
         return TokenAccount.parse(
             account_info, instrument_lookup=context.instrument_lookup
         )
+
+    def subscribe(
+        self,
+        context: Context,
+        websocketmanager: WebSocketSubscriptionManager,
+        callback: typing.Callable[["TokenAccount"], None],
+    ) -> Disposable:
+        token = Token.ensure(self.value.token)
+
+        def __parser(account_info: AccountInfo) -> TokenAccount:
+            return TokenAccount.parse(account_info, token=token)
+
+        subscription = WebSocketAccountSubscription(context, self.address, __parser)
+        websocketmanager.add(subscription)
+        subscription.publisher.subscribe(on_next=callback)  # type: ignore[call-arg]
+
+        return subscription
 
     def __str__(self) -> str:
         return (

@@ -20,13 +20,12 @@ import rx
 import typing
 import websocket
 
-from datetime import datetime
 from decimal import Decimal
 from rx.subject.subject import Subject
 
 from ...context import Context
-from ...datetimes import utc_now
-from ...markets import Market
+from ...datetimes import utc_now, datetime_from_timestamp
+from ...loadedmarket import LoadedMarket
 from ...observables import Disposable, DisposeWrapper
 from ...oracle import (
     Oracle,
@@ -62,10 +61,10 @@ FtxOracleConfidence: Decimal = Decimal(0)
 # Implements the `Oracle` abstract base class specialised to the Ftx Network.
 #
 class FtxOracle(Oracle):
-    def __init__(self, market: Market, ftx_symbol: str) -> None:
-        name = f"Ftx Oracle for {market.symbol} / {ftx_symbol}"
+    def __init__(self, market: LoadedMarket, ftx_symbol: str) -> None:
+        name = f"Ftx Oracle for {market.fully_qualified_symbol} / {ftx_symbol}"
         super().__init__(name, market)
-        self.market: Market = market
+        self.market: LoadedMarket = market
         self.ftx_symbol: str = ftx_symbol
         features: SupportedOracleFeature = (
             SupportedOracleFeature.MID_PRICE | SupportedOracleFeature.TOP_BID_AND_OFFER
@@ -97,7 +96,7 @@ class FtxOracle(Oracle):
                 ask = Decimal(data["data"]["ask"])
                 mid = (bid + ask) / Decimal(2)
                 time = data["data"]["time"]
-                timestamp = datetime.fromtimestamp(time)
+                timestamp = datetime_from_timestamp(time)
                 price = Price(
                     self.source,
                     timestamp,
@@ -147,7 +146,7 @@ class FtxOracleProvider(OracleProvider):
         super().__init__("Ftx Oracle Factory")
 
     def oracle_for_market(
-        self, context: Context, market: Market
+        self, context: Context, market: LoadedMarket
     ) -> typing.Optional[Oracle]:
         symbol = self._market_symbol_to_ftx_symbol(market.symbol)
         return FtxOracle(market, symbol)

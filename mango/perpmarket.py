@@ -14,35 +14,37 @@
 #   [Email](mailto:hello@blockworks.foundation)
 
 
-import rx.operators
 import typing
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from dateutil import parser
 from decimal import Decimal
 from solana.publickey import PublicKey
 
 from .account import Account
 from .accountinfo import AccountInfo
+from .addressableaccount import AddressableAccount
 from .combinableinstructions import CombinableInstructions
 from .constants import SYSTEM_PROGRAM_ADDRESS
 from .context import Context
+from .datetimes import utc_now
 from .group import Group
 from .instructions import (
-    build_cancel_perp_order_instructions,
-    build_mango_consume_events_instructions,
-    build_cancel_all_perp_orders_instructions,
-    build_place_perp_order_instructions,
-    build_redeem_accrued_mango_instructions,
+    build_mango_redeem_accrued_instructions,
+    build_perp_cancel_all_orders_instructions,
+    build_perp_cancel_order_instructions,
+    build_perp_consume_events_instructions,
+    build_perp_place_order_instructions,
 )
+from .layouts import layouts
 from .loadedmarket import LoadedMarket
 from .lotsizeconverter import LotSizeConverter, RaisingLotSizeConverter
 from .markets import InventorySource, MarketType, Market
 from .marketoperations import MarketInstructionBuilder, MarketOperations
+from .metadata import Metadata
 from .observables import Disposable
-from .orderbookside import PerpOrderBookSide
-from .orders import Order, OrderBook
+from .orders import Order, OrderBook, OrderType, Side
 from .perpeventqueue import (
     PerpEvent,
     PerpEventQueue,
@@ -57,7 +59,9 @@ from .wallet import Wallet
 from .websocketsubscription import (
     IndividualWebSocketSubscriptionManager,
     WebSocketAccountSubscription,
+    WebSocketSubscriptionManager,
 )
+from .version import Version
 
 
 # # 🥭 FundingRate class
@@ -123,6 +127,181 @@ class FundingRate:
         return f"{self}"
 
 
+# # 🥭 PerpOrderBookSide class
+#
+# `PerpOrderBookSide` holds orders for one side of a market.
+#
+class PerpOrderBookSide(AddressableAccount):
+    def __init__(
+        self,
+        account_info: AccountInfo,
+        version: Version,
+        meta_data: Metadata,
+        perp_market_details: PerpMarketDetails,
+        bump_index: Decimal,
+        free_list_len: Decimal,
+        free_list_head: Decimal,
+        root_node: Decimal,
+        leaf_count: Decimal,
+        nodes: typing.Any,
+    ) -> None:
+        super().__init__(account_info)
+        self.version: Version = version
+
+        self.meta_data: Metadata = meta_data
+        self.perp_market_details: PerpMarketDetails = perp_market_details
+        self.bump_index: Decimal = bump_index
+        self.free_list_len: Decimal = free_list_len
+        self.free_list_head: Decimal = free_list_head
+        self.root_node: Decimal = root_node
+        self.leaf_count: Decimal = leaf_count
+        self.nodes: typing.Any = nodes
+
+    @staticmethod
+    def from_layout(
+        layout: typing.Any,
+        account_info: AccountInfo,
+        version: Version,
+        perp_market_details: PerpMarketDetails,
+    ) -> "PerpOrderBookSide":
+        meta_data = Metadata.from_layout(layout.meta_data)
+        bump_index: Decimal = layout.bump_index
+        free_list_len: Decimal = layout.free_list_len
+        free_list_head: Decimal = layout.free_list_head
+        root_node: Decimal = layout.root_node
+        leaf_count: Decimal = layout.leaf_count
+        nodes: typing.Any = layout.nodes
+
+        return PerpOrderBookSide(
+            account_info,
+            version,
+            meta_data,
+            perp_market_details,
+            bump_index,
+            free_list_len,
+            free_list_head,
+            root_node,
+            leaf_count,
+            nodes,
+        )
+
+    @staticmethod
+    def parse(
+        account_info: AccountInfo, perp_market_details: PerpMarketDetails
+    ) -> "PerpOrderBookSide":
+        data = account_info.data
+        if len(data) != layouts.ORDERBOOK_SIDE.sizeof():
+            raise Exception(
+                f"PerpOrderBookSide data length ({len(data)}) does not match expected size ({layouts.ORDERBOOK_SIDE.sizeof()})"
+            )
+
+        layout = layouts.ORDERBOOK_SIDE.parse(data)
+        return PerpOrderBookSide.from_layout(
+            layout, account_info, Version.V1, perp_market_details
+        )
+
+    @staticmethod
+    def load(
+        context: Context, address: PublicKey, perp_market_details: PerpMarketDetails
+    ) -> "PerpOrderBookSide":
+        account_info = AccountInfo.load(context, address)
+        if account_info is None:
+            raise Exception(
+                f"PerpOrderBookSide account not found at address '{address}'"
+            )
+        return PerpOrderBookSide.parse(account_info, perp_market_details)
+
+    def subscribe(
+        self,
+        context: Context,
+        websocketmanager: WebSocketSubscriptionManager,
+        callback: typing.Callable[["PerpOrderBookSide"], None],
+    ) -> Disposable:
+        def __parser(account_info: AccountInfo) -> PerpOrderBookSide:
+            return PerpOrderBookSide.parse(account_info, self.perp_market_details)
+
+        subscription = WebSocketAccountSubscription(context, self.address, __parser)
+        websocketmanager.add(subscription)
+        subscription.publisher.subscribe(on_next=callback)  # type: ignore[call-arg]
+
+        return subscription
+
+    def orders(self) -> typing.Sequence[Order]:
+        if self.leaf_count == 0:
+            return []
+
+        if self.meta_data.data_type == layouts.DATA_TYPE.Bids:
+            order_side = Side.BUY
+        else:
+            order_side = Side.SELL
+
+        stack = [self.root_node]
+        orders: typing.List[Order] = []
+        while len(stack) > 0:
+            index = int(stack.pop())
+            node = self.nodes[index]
+            if node.type_name == "leaf":
+                timestamp: datetime = node.timestamp
+                expiration = Order.NoExpiration
+                if node.time_in_force != 0:
+                    expiration = timestamp + timedelta(
+                        seconds=float(node.time_in_force)
+                    )
+
+                price = node.key["price"]
+                quantity = node.quantity
+
+                decimals_differential = (
+                    self.perp_market_details.base_instrument.decimals
+                    - self.perp_market_details.quote_token.token.decimals
+                )
+                native_to_ui = Decimal(10) ** decimals_differential
+                quote_lot_size = self.perp_market_details.quote_lot_size
+                base_lot_size = self.perp_market_details.base_lot_size
+                actual_price = price * (quote_lot_size / base_lot_size) * native_to_ui
+
+                base_factor = (
+                    Decimal(10) ** self.perp_market_details.base_instrument.decimals
+                )
+                actual_quantity = (
+                    quantity * self.perp_market_details.base_lot_size
+                ) / base_factor
+
+                orders += [
+                    Order(
+                        int(node.key["order_id"]),
+                        node.client_order_id,
+                        node.owner,
+                        order_side,
+                        actual_price,
+                        actual_quantity,
+                        OrderType.UNKNOWN,
+                        timestamp=timestamp,
+                        expiration=expiration,
+                    )
+                ]
+            elif node.type_name == "inner":
+                if order_side == Side.BUY:
+                    stack = [*stack, node.children[0], node.children[1]]
+                else:
+                    stack = [*stack, node.children[1], node.children[0]]
+        return orders
+
+    def __str__(self) -> str:
+        nodes = "\n        ".join(
+            [str(node).replace("\n", "\n        ") for node in self.orders()]
+        )
+        return f"""« PerpOrderBookSide {self.version} [{self.address}]
+    {self.meta_data}
+    Perp Market: {self.perp_market_details}
+    Bump Index: {self.bump_index}
+    Free List: {self.free_list_head} (head) {self.free_list_len} (length)
+    Root Node: {self.root_node}
+    Leaf Count: {self.leaf_count}
+        {nodes}
+»"""
+
+
 # # 🥭 PerpMarket class
 #
 # This class encapsulates our knowledge of a Mango perps market.
@@ -160,12 +339,18 @@ class PerpMarket(LoadedMarket):
     @staticmethod
     def ensure(market: Market) -> "PerpMarket":
         if not PerpMarket.isa(market):
-            raise Exception(f"Market for {market.symbol} is not a Perp market")
+            raise Exception(
+                f"Market for {market.fully_qualified_symbol} is not a Perp market"
+            )
         return typing.cast(PerpMarket, market)
 
     @property
     def symbol(self) -> str:
         return f"{self.base.symbol}-PERP"
+
+    @property
+    def fully_qualified_symbol(self) -> str:
+        return f"perp:{self.symbol}"
 
     @property
     def group(self) -> Group:
@@ -225,26 +410,17 @@ class PerpMarket(LoadedMarket):
             context, self.event_queue_address, self.lot_size_converter
         )
 
-        splitter: UnseenPerpEventChangesTracker = UnseenPerpEventChangesTracker(initial)
-        event_queue_subscription = WebSocketAccountSubscription(
-            context,
-            self.event_queue_address,
-            lambda account_info: PerpEventQueue.parse(
-                account_info, self.lot_size_converter
-            ),
-        )
-        disposer.add_disposable(event_queue_subscription)
-
         manager = IndividualWebSocketSubscriptionManager(context)
         disposer.add_disposable(manager)
-        manager.add(event_queue_subscription)
 
-        publisher = event_queue_subscription.publisher.pipe(
-            rx.operators.flat_map(splitter.unseen)
-        )
+        splitter: UnseenPerpEventChangesTracker = UnseenPerpEventChangesTracker(initial)
 
-        individual_event_subscription = publisher.subscribe(on_next=handler)
-        disposer.add_disposable(individual_event_subscription)
+        def __split_handler(pev: PerpEventQueue) -> None:
+            for event in splitter.unseen(pev):
+                handler(event)
+
+        subscription = initial.subscribe(context, manager, __split_handler)
+        disposer.add_disposable(subscription)
 
         manager.open()
 
@@ -297,11 +473,7 @@ class PerpMarketInstructionBuilder(MarketInstructionBuilder):
     def build_cancel_order_instructions(
         self, order: Order, ok_if_missing: bool = False
     ) -> CombinableInstructions:
-        if self.perp_market.underlying_perp_market is None:
-            raise Exception(
-                f"PerpMarket {self.perp_market.symbol} has not been loaded."
-            )
-        return build_cancel_perp_order_instructions(
+        return build_perp_cancel_order_instructions(
             self.context,
             self.wallet,
             self.account,
@@ -311,11 +483,7 @@ class PerpMarketInstructionBuilder(MarketInstructionBuilder):
         )
 
     def build_place_order_instructions(self, order: Order) -> CombinableInstructions:
-        if self.perp_market.underlying_perp_market is None:
-            raise Exception(
-                f"PerpMarket {self.perp_market.symbol} has not been loaded."
-            )
-        return build_place_perp_order_instructions(
+        return build_perp_place_order_instructions(
             self.context,
             self.wallet,
             self.perp_market.underlying_perp_market.group,
@@ -338,11 +506,6 @@ class PerpMarketInstructionBuilder(MarketInstructionBuilder):
     def build_crank_instructions(
         self, addresses: typing.Sequence[PublicKey], limit: Decimal = Decimal(32)
     ) -> CombinableInstructions:
-        if self.perp_market.underlying_perp_market is None:
-            raise Exception(
-                f"PerpMarket {self.perp_market.symbol} has not been loaded."
-            )
-
         distinct_addresses: typing.List[PublicKey] = [self.account.address]
         for address in addresses:
             if address not in distinct_addresses:
@@ -361,7 +524,7 @@ class PerpMarketInstructionBuilder(MarketInstructionBuilder):
             f"About to crank {len(limited_addresses)} addresses: {limited_addresses}"
         )
 
-        return build_mango_consume_events_instructions(
+        return build_perp_consume_events_instructions(
             self.context,
             self.group,
             self.perp_market.underlying_perp_market,
@@ -370,7 +533,7 @@ class PerpMarketInstructionBuilder(MarketInstructionBuilder):
         )
 
     def build_redeem_instructions(self) -> CombinableInstructions:
-        return build_redeem_accrued_mango_instructions(
+        return build_mango_redeem_accrued_instructions(
             self.context,
             self.wallet,
             self.perp_market,
@@ -382,11 +545,7 @@ class PerpMarketInstructionBuilder(MarketInstructionBuilder):
     def build_cancel_all_orders_instructions(
         self, limit: Decimal = Decimal(32)
     ) -> CombinableInstructions:
-        if self.perp_market.underlying_perp_market is None:
-            raise Exception(
-                f"PerpMarket {self.perp_market.symbol} has not been loaded."
-            )
-        return build_cancel_all_perp_orders_instructions(
+        return build_perp_cancel_all_orders_instructions(
             self.context,
             self.wallet,
             self.account,
@@ -430,14 +589,10 @@ class PerpMarketOperations(MarketOperations):
     def perp_market(self) -> PerpMarket:
         return self.market_instruction_builder.perp_market
 
-    @property
-    def market_name(self) -> str:
-        return self.perp_market.symbol
-
     def cancel_order(
         self, order: Order, ok_if_missing: bool = False
     ) -> typing.Sequence[str]:
-        self._logger.info(f"Cancelling {self.market_name} order {order}.")
+        self._logger.info(f"Cancelling {self.symbol} order {order}.")
         signers: CombinableInstructions = CombinableInstructions.from_wallet(
             self.wallet
         )
@@ -453,12 +608,12 @@ class PerpMarketOperations(MarketOperations):
     def place_order(
         self, order: Order, crank_limit: Decimal = Decimal(5)
     ) -> typing.Sequence[str]:
-        client_id: int = self.context.generate_client_id()
+        client_id: int = order.client_id or self.context.generate_client_id()
         signers: CombinableInstructions = CombinableInstructions.from_wallet(
             self.wallet
         )
         order_with_client_id: Order = order.with_update(client_id=client_id)
-        self._logger.info(f"Placing {self.market_name} order {order_with_client_id}.")
+        self._logger.info(f"Placing {self.symbol} order {order_with_client_id}.")
         place: CombinableInstructions = (
             self.market_instruction_builder.build_place_order_instructions(
                 order_with_client_id
@@ -491,11 +646,11 @@ class PerpMarketOperations(MarketOperations):
     def load_orderbook(self) -> OrderBook:
         return self.perp_market.fetch_orderbook(self.context)
 
-    def load_my_orders(self, include_expired: bool = False) -> typing.Sequence[Order]:
+    def load_my_orders(
+        self, cutoff: typing.Optional[datetime] = utc_now()
+    ) -> typing.Sequence[Order]:
         orderbook: OrderBook = self.load_orderbook()
-        return orderbook.all_orders_for_owner(
-            self.account.address, include_expired=include_expired
-        )
+        return orderbook.all_orders_for_owner(self.account.address, cutoff)
 
     def _build_crank(
         self, limit: Decimal = Decimal(32), add_self: bool = False
@@ -518,7 +673,7 @@ class PerpMarketOperations(MarketOperations):
         )
 
     def __str__(self) -> str:
-        return f"""« PerpMarketOperations [{self.market_name}] »"""
+        return f"""« PerpMarketOperations [{self.symbol}] »"""
 
 
 # # 🥭 PerpMarketStub class
@@ -544,6 +699,10 @@ class PerpMarketStub(Market):
             RaisingLotSizeConverter(),
         )
         self.group_address: PublicKey = group_address
+
+    @property
+    def fully_qualified_symbol(self) -> str:
+        return f"perp:{self.symbol}"
 
     def load(
         self, context: Context, group: typing.Optional[Group] = None

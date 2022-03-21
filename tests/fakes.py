@@ -181,9 +181,43 @@ def fake_spot_market_stub() -> mango.SpotMarketStub:
 def fake_loaded_market(
     base_lot_size: Decimal = Decimal(1), quote_lot_size: Decimal = Decimal(1)
 ) -> mango.LoadedMarket:
+    class FakeLoadedMarket(mango.LoadedMarket):
+        @property
+        def fully_qualified_symbol(self) -> str:
+            return "full:MARKET/SYMBOL"
+
+        @property
+        def bids_address(self) -> PublicKey:
+            return fake_seeded_public_key("bids_address")
+
+        @property
+        def asks_address(self) -> PublicKey:
+            return fake_seeded_public_key("asks_address")
+
+        @property
+        def event_queue_address(self) -> PublicKey:
+            return fake_seeded_public_key("event_queue_address")
+
+        def on_fill(
+            self,
+            context: mango.Context,
+            handler: typing.Callable[[mango.FillEvent], None],
+        ) -> mango.Disposable:
+            return mango.Disposable()
+
+        def on_event(
+            self, context: mango.Context, handler: typing.Callable[[mango.Event], None]
+        ) -> mango.Disposable:
+            return mango.Disposable()
+
+        def parse_account_info_to_orders(
+            self, account_info: mango.AccountInfo
+        ) -> typing.Sequence[mango.Order]:
+            return []
+
     base = fake_token("BASE")
     quote = fake_token("QUOTE")
-    return mango.LoadedMarket(
+    return FakeLoadedMarket(
         mango.MarketType.PERP,
         fake_seeded_public_key("program ID"),
         fake_seeded_public_key("perp market"),
@@ -240,7 +274,7 @@ def fake_order_id(index: int, price: int) -> int:
 
 
 def fake_price(
-    market: mango.Market = fake_loaded_market(),
+    market: mango.LoadedMarket = fake_loaded_market(),
     price: Decimal = Decimal(100),
     bid: Decimal = Decimal(99),
     ask: Decimal = Decimal(101),
@@ -432,6 +466,8 @@ def fake_open_orders(
     market = fake_seeded_public_key("market")
     owner = fake_seeded_public_key("owner")
 
+    base = fake_token("FAKEBASE")
+    quote = fake_token("FAKEQUOTE")
     flags = mango.AccountFlags(
         mango.Version.V1, True, False, True, False, False, False, False, False
     )
@@ -442,6 +478,8 @@ def fake_open_orders(
         flags,
         market,
         owner,
+        base,
+        quote,
         base_token_free,
         base_token_total,
         quote_token_free,

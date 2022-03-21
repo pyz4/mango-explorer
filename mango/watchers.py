@@ -27,11 +27,11 @@ from .combinableinstructions import CombinableInstructions
 from .context import Context
 from .group import GroupSlot, Group
 from .healthcheck import HealthCheck
-from .instructions import build_create_serum_open_orders_instructions
+from .instructions import build_serum_create_openorders_instructions
 from .instrumentvalue import InstrumentValue
 from .inventory import Inventory
 from .loadedmarket import LoadedMarket
-from .markets import Market, InventorySource
+from .markets import InventorySource
 from .modelstate import EventQueue
 from .observables import Disposable, LatestItemObserverSubscriber
 from .openorders import OpenOrders
@@ -137,22 +137,22 @@ def build_spot_open_orders_watcher(
         )
         open_orders_address = market_operations.create_openorders()
         logging.info(
-            f"Created {spot_market.symbol} OpenOrders at: {open_orders_address}"
+            f"Created {spot_market.fully_qualified_symbol} OpenOrders at: {open_orders_address}"
         )
 
     spot_open_orders_subscription = WebSocketAccountSubscription[OpenOrders](
         context,
         open_orders_address,
         lambda account_info: OpenOrders.parse(
-            account_info, spot_market.base.decimals, spot_market.quote.decimals
+            account_info, spot_market.base, spot_market.quote
         ),
     )
     manager.add(spot_open_orders_subscription)
     initial_spot_open_orders = OpenOrders.load(
         context,
         open_orders_address,
-        spot_market.base.decimals,
-        spot_market.quote.decimals,
+        spot_market.base,
+        spot_market.quote,
     )
     latest_open_orders_observer = LatestItemObserverSubscriber[OpenOrders](
         initial_spot_open_orders
@@ -176,8 +176,8 @@ def build_serum_open_orders_watcher(
         serum_market.address,
         wallet.address,
         context.serum_program_address,
-        serum_market.base.decimals,
-        serum_market.quote.decimals,
+        serum_market.base,
+        serum_market.quote,
     )
     if len(all_open_orders) > 0:
         initial_serum_open_orders: OpenOrders = all_open_orders[0]
@@ -186,14 +186,14 @@ def build_serum_open_orders_watcher(
         raw_market = PySerumMarket.load(
             context.client.compatible_client, serum_market.address
         )
-        create_open_orders = build_create_serum_open_orders_instructions(
+        create_open_orders = build_serum_create_openorders_instructions(
             context, wallet, raw_market
         )
 
         open_orders_address = create_open_orders.signers[0].public_key
 
         logging.info(
-            f"Creating OpenOrders account for market {serum_market.symbol} at {open_orders_address}."
+            f"Creating OpenOrders account for market {serum_market.fully_qualified_symbol} at {open_orders_address}."
         )
         signers: CombinableInstructions = CombinableInstructions.from_wallet(wallet)
         transaction_ids = (signers + create_open_orders).execute(context)
@@ -201,15 +201,15 @@ def build_serum_open_orders_watcher(
         initial_serum_open_orders = OpenOrders.load(
             context,
             open_orders_address,
-            serum_market.base.decimals,
-            serum_market.quote.decimals,
+            serum_market.base,
+            serum_market.quote,
         )
 
     serum_open_orders_subscription = WebSocketAccountSubscription[OpenOrders](
         context,
         open_orders_address,
         lambda account_info: OpenOrders.parse(
-            account_info, serum_market.base.decimals, serum_market.quote.decimals
+            account_info, serum_market.base, serum_market.quote
         ),
     )
 
@@ -262,13 +262,13 @@ def build_price_watcher(
     health_check: HealthCheck,
     disposer: Disposable,
     provider_name: str,
-    market: Market,
+    market: LoadedMarket,
 ) -> LatestItemObserverSubscriber[Price]:
     oracle_provider: OracleProvider = create_oracle_provider(context, provider_name)
     oracle = oracle_provider.oracle_for_market(context, market)
     if oracle is None:
         raise Exception(
-            f"Could not find oracle for market {market.symbol} from provider {provider_name}."
+            f"Could not find oracle for market {market.fully_qualified_symbol} from provider {provider_name}."
         )
 
     initial_price = oracle.fetch_price(context)
@@ -373,7 +373,7 @@ def build_orderbook_watcher(
         or orderbook_infos[1] is None
     ):
         raise Exception(
-            f"Could not find {market.symbol} order book at addresses {orderbook_addresses}."
+            f"Could not find {market.fully_qualified_symbol} order book at addresses {orderbook_addresses}."
         )
 
     initial_orderbook: OrderBook = market.parse_account_infos_to_orderbook(

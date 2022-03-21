@@ -33,12 +33,13 @@
 
 
 import construct
-import datetime
 import typing
 
+from datetime import datetime
 from decimal import Decimal, Context as DecimalContext
 from solana.publickey import PublicKey
 
+from ..datetimes import datetime_from_chain
 
 # # Adapters
 #
@@ -176,9 +177,7 @@ else:
 #
 if typing.TYPE_CHECKING:
 
-    class DatetimeAdapter(
-        construct.Adapter[datetime.datetime, int, typing.Any, typing.Any]
-    ):
+    class DatetimeAdapter(construct.Adapter[datetime, int, typing.Any, typing.Any]):
         def __init__(self) -> None:
             pass
 
@@ -188,14 +187,10 @@ else:
         def __init__(self) -> None:
             super().__init__(construct.BytesInteger(8, swapped=True))
 
-        def _decode(
-            self, obj: int, context: typing.Any, path: typing.Any
-        ) -> datetime.datetime:
-            return datetime.datetime.fromtimestamp(obj, tz=datetime.timezone.utc)
+        def _decode(self, obj: int, context: typing.Any, path: typing.Any) -> datetime:
+            return datetime_from_chain(obj)
 
-        def _encode(
-            self, obj: datetime.datetime, context: typing.Any, path: typing.Any
-        ) -> int:
+        def _encode(self, obj: datetime, context: typing.Any, path: typing.Any) -> int:
             return int(obj.timestamp())
 
 
@@ -1384,6 +1379,28 @@ WITHDRAW = construct.Struct(
 )
 
 
+# /// Cache prices
+# ///
+# /// Accounts expected: 3 + Oracles
+# /// 0. `[]` mango_group_ai -
+# /// 1. `[writable]` mango_cache_ai -
+# /// 2+... `[]` oracle_ais - flux aggregator feed accounts
+CACHE_PRICES = construct.Struct(
+    "variant" / construct.Const(7, construct.BytesInteger(4, swapped=True)),
+)
+
+
+# /// DEPRECATED - caching of root banks now happens in update index
+# /// Cache root banks
+# ///
+# /// Accounts expected: 2 + Root Banks
+# /// 0. `[]` mango_group_ai
+# /// 1. `[writable]` mango_cache_ai
+CACHE_ROOT_BANKS = construct.Struct(
+    "variant" / construct.Const(8, construct.BytesInteger(4, swapped=True)),
+)
+
+
 # /// Place an order on the Serum Dex using Mango account
 # /// Accounts expected by this instruction (22+openorders):
 # { isSigner: false, isWritable: false, pubkey: mangoGroupPk },
@@ -1415,7 +1432,7 @@ WITHDRAW = construct.Struct(
 #     pubkey,
 # })),
 PLACE_SPOT_ORDER = construct.Struct(
-    "variant" / construct.Const(9, construct.BytesInteger(4, swapped=True)),  # 4
+    "variant" / construct.Const(9, construct.BytesInteger(4, swapped=True)),
     "side" / DecimalAdapter(4),  # 8
     "limit_price" / DecimalAdapter(),  # 16
     "max_base_quantity" / DecimalAdapter(),  # 24
@@ -1492,6 +1509,31 @@ CONSUME_EVENTS = construct.Struct(
 )
 
 
+# /// Cache perp markets
+# ///
+# /// Accounts expected: 2 + Perp Markets
+# /// 0. `[]` mango_group_ai
+# /// 1. `[writable]` mango_cache_ai
+CACHE_PERP_MARKETS = construct.Struct(
+    "variant" / construct.Const(16, construct.BytesInteger(4, swapped=True)),
+)
+
+
+# /// Update funding related variables
+#
+# Seems to take:
+#   const keys = [
+#     { isSigner: false, isWritable: false, pubkey: mangoGroupPk },
+#     { isSigner: false, isWritable: true, pubkey: mangoCachePk },
+#     { isSigner: false, isWritable: true, pubkey: perpMarketPk },
+#     { isSigner: false, isWritable: false, pubkey: bidsPk },
+#     { isSigner: false, isWritable: false, pubkey: asksPk },
+#   ];
+UPDATE_FUNDING = construct.Struct(
+    "variant" / construct.Const(17, construct.BytesInteger(4, swapped=True)),
+)
+
+
 # /// Settle all funds from serum dex open orders
 # ///
 # /// Accounts expected by this instruction (18):
@@ -1530,6 +1572,16 @@ CANCEL_SPOT_ORDER = construct.Struct(
     "variant" / construct.Const(20, construct.BytesInteger(4, swapped=True)),
     "side" / DecimalAdapter(4),
     "order_id" / DecimalAdapter(16),
+)
+
+# /// Update a root bank's indexes by providing all it's node banks
+# ///
+# /// Accounts expected: 2 + Node Banks
+# /// 0. `[]` mango_group_ai - MangoGroup
+# /// 1. `[]` root_bank_ai - RootBank
+# /// 2+... `[]` node_bank_ais - NodeBanks
+UPDATE_ROOT_BANK = construct.Struct(
+    "variant" / construct.Const(21, construct.BytesInteger(4, swapped=True)),
 )
 
 
@@ -1631,6 +1683,22 @@ CLOSE_MANGO_ACCOUNT = construct.Struct(
 CREATE_MANGO_ACCOUNT = construct.Struct(
     "variant" / construct.Const(55, construct.BytesInteger(4, swapped=True)),
     "account_num" / DecimalAdapter(),
+)
+
+
+# /// Cancel all perp open orders for one side of the book
+# ///
+# /// Accounts expected: 6
+# /// 0. `[]` mango_group_ai - MangoGroup
+# /// 1. `[writable]` mango_account_ai - MangoAccount
+# /// 2. `[signer]` owner_ai - Owner of Mango Account
+# /// 3. `[writable]` perp_market_ai - PerpMarket
+# /// 4. `[writable]` bids_ai - Bids acc
+# /// 5. `[writable]` asks_ai - Asks acc
+CANCEL_PERP_ORDER_SIDE = construct.Struct(
+    "variant" / construct.Const(57, construct.BytesInteger(4, swapped=True)),
+    "side" / DecimalAdapter(1),  # { buy: 0, sell: 1 }
+    "limit" / DecimalAdapter(1),
 )
 
 
@@ -1747,8 +1815,8 @@ InstructionParsersByVariant = {
     4: UNSPECIFIED,  # ADD_SPOT_MARKET,
     5: UNSPECIFIED,  # ADD_TO_BASKET,
     6: UNSPECIFIED,  # BORROW,
-    7: UNSPECIFIED,  # CACHE_PRICES,
-    8: UNSPECIFIED,  # CACHE_ROOT_BANKS,
+    7: CACHE_PRICES,  # CACHE_PRICES,
+    8: CACHE_ROOT_BANKS,  # CACHE_ROOT_BANKS,
     9: PLACE_SPOT_ORDER,  # PLACE_SPOT_ORDER,
     10: UNSPECIFIED,  # ADD_ORACLE,
     11: UNSPECIFIED,  # ADD_PERP_MARKET,
@@ -1756,12 +1824,12 @@ InstructionParsersByVariant = {
     13: CANCEL_PERP_ORDER_BY_CLIENT_ID,  # CANCEL_PERP_ORDER_BY_CLIENT_ID,
     14: CANCEL_PERP_ORDER,  # CANCEL_PERP_ORDER,
     15: CONSUME_EVENTS,  # CONSUME_EVENTS,
-    16: UNSPECIFIED,  # CACHE_PERP_MARKETS,
-    17: UNSPECIFIED,  # UPDATE_FUNDING,
+    16: CACHE_PERP_MARKETS,  # CACHE_PERP_MARKETS,
+    17: UPDATE_FUNDING,  # UPDATE_FUNDING,
     18: UNSPECIFIED,  # SET_ORACLE,
     19: SETTLE_FUNDS,  # SETTLE_FUNDS,
     20: CANCEL_SPOT_ORDER,  # CANCEL_SPOT_ORDER,
-    21: UNSPECIFIED,  # UPDATE_ROOT_BANK,
+    21: UPDATE_ROOT_BANK,  # UPDATE_ROOT_BANK,
     22: UNSPECIFIED,  # SETTLE_PNL,
     23: UNSPECIFIED,  # SETTLE_BORROW,
     24: UNSPECIFIED,  # FORCE_CANCEL_SPOT_ORDERS,
@@ -1797,7 +1865,7 @@ InstructionParsersByVariant = {
     54: UNSPECIFIED,  # RESOLVE_DUST,
     55: CREATE_MANGO_ACCOUNT,  # CREATE_MANGO_ACCOUNT,
     56: UNSPECIFIED,  # UPGRADE_MANGO_ACCOUNT_V0_V1,
-    57: UNSPECIFIED,  # CANCEL_PERP_ORDER_SIDE,
+    57: CANCEL_PERP_ORDER_SIDE,  # CANCEL_PERP_ORDER_SIDE,
     58: SET_DELEGATE,  # SET_DELEGATE,
     59: UNSPECIFIED,  # CHANGE_SPOT_MARKET_PARAMS,
     60: CREATE_SPOT_OPEN_ORDERS,  # CREATE_SPOT_OPEN_ORDERS,
