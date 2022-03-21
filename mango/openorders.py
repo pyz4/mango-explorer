@@ -95,8 +95,8 @@ class OpenOrders(AddressableAccount):
         account_flags = AccountFlags.from_layout(layout.account_flags)
         program_address = account_info.owner
 
-        base_divisor = 10**base.decimals
-        quote_divisor = 10**quote.decimals
+        base_divisor = 10**base
+        quote_divisor = 10**quote
         base_token_free: Decimal = layout.base_token_free / base_divisor
         base_token_total: Decimal = layout.base_token_total / base_divisor
         quote_token_free: Decimal = layout.quote_token_free / quote_divisor
