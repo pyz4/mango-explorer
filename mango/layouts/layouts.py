@@ -1830,6 +1830,32 @@ PLACE_PERP_ORDER_2 = construct.Struct(
 )
 
 
+# /// Withdraw funds that were deposited earlier.
+# ///
+# /// Accounts expected by this instruction (10):
+# ///
+# /// 0. `[read]` mango_group_ai,   -
+# /// 1. `[write]` mango_account_ai, -
+# /// 2. `[read]` owner_ai,         -
+# /// 3. `[read]` mango_cache_ai,   -
+# /// 4. `[read]` root_bank_ai,     -
+# /// 5. `[write]` node_bank_ai,     -
+# /// 6. `[write]` vault_ai,         -
+# /// 7. `[write]` token_account_ai, -
+# /// 8. `[read]` signer_ai,        -
+# /// 9. `[read]` token_prog_ai,    -
+# /// 10..10 + NUM_IN_MARGIN_BASKET `[]` open_orders_ais - pass in open orders in margin basket
+# Withdraw {
+#     quantity: u64,
+#     allow_borrow: bool,
+# },
+WITHDRAW_2 = construct.Struct(
+    "variant" / construct.Const(66, construct.BytesInteger(4, swapped=True)),
+    "quantity" / DecimalAdapter(),
+    "allow_borrow" / DecimalAdapter(1),
+)
+
+
 UNSPECIFIED = construct.Struct("variant" / DecimalAdapter(4))
 
 
@@ -1899,4 +1925,6 @@ InstructionParsersByVariant = {
     62: SET_REFERRER_MEMORY,  # SET_REFERRER_MEMORY,
     63: REGISTER_REFERRER_ID,  # REGISTER_REFERRER_ID,
     64: PLACE_PERP_ORDER_2,  # PLACE_PERP_ORDER_2,
+    65: UNSPECIFIED,  # CANCEL_ALL_SPOT_ORDERS
+    66: WITHDRAW_2,
 }

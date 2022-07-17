@@ -24,7 +24,6 @@ from solana.rpc.commitment import Commitment, Finalized
 from solana.keypair import Keypair
 from solana.publickey import PublicKey
 from solana.transaction import Transaction, TransactionInstruction
-from solana.utils import shortvec_encoding as shortvec
 
 from .constants import SOL_DECIMAL_DIVISOR
 from .context import Context
@@ -35,6 +34,24 @@ from .wallet import Wallet
 _MAXIMUM_TRANSACTION_LENGTH = 1280 - 40 - 8
 _PUBKEY_LENGTH = 32
 _SIGNATURE_LENGTH = 64
+
+
+def shortvec_length(value: int) -> int:
+    return len(_encode_length(value))
+
+
+def _encode_length(value: int) -> bytes:
+    """Return the serialized length in compact-u16 format."""
+    elems, rem_len = [], value
+    while True:
+        elem = rem_len & 0x7F
+        rem_len >>= 7
+        if not rem_len:
+            elems.append(elem)
+            break
+        elem |= 0x80
+        elems.append(elem)
+    return bytes(elems)
 
 
 def _split_instructions_into_chunks(
