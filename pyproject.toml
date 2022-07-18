@@ -1,5 +1,5 @@
 [tool.pdm]
-include = ["**/*.json", "**/*.toml"]
+include = ["bin/*", "data/*", "data/.version"]
 exclude = ["**/__pycache__"]
 
 [tool.pdm.dev-dependencies]

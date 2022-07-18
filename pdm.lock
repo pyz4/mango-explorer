@@ -575,7 +575,7 @@ summary = "Typing stubs for pytz"
 
 [[package]]
 name = "types-requests"
-version = "2.28.1"
+version = "2.28.2"
 summary = "Typing stubs for requests"
 dependencies = [
     "types-urllib3<1.27",
@@ -1194,10 +1194,6 @@ content_hash = "sha256:5134b2d53e1172b65e4e0e30270c0d92174cbf871f4ac37fa4e81bc44
     {url = "https://files.pythonhosted.org/packages/71/39/171f1c67cd00715f190ba0b100d606d440a28c93c7714febeca8b79af85e/six-1.16.0.tar.gz", hash = "sha256:1e61c37477a1626458e36f7b1d82aa5c9b094fa4802892072e49de9c60c4c926"},
 ]
 "sniffio 1.2.0" = [
-    {url = "https://files.pythonhosted.org/packages/ca/08/58f3b857b8bba832983e8c5dce5e3f8c677a5527e41cf61ff45effc78cae/sniffio-1.0.0-py3-none-any.whl", hash = "sha256:afb4997584a920e6e378a81ded2b3e71a696b85a68c4bfbe4dadf1ba57a9ef45"},
-    {url = "https://files.pythonhosted.org/packages/c8/83/0e3953535271855718993595c582a0af7726b41beba683e63e1c3abc1982/sniffio-1.0.0.tar.gz", hash = "sha256:2e9b81429e3b7c9e119fcee2673ee3be3229982adc68b3f59317863aba05ebb7"},
-    {url = "https://files.pythonhosted.org/packages/b3/82/4bd4b7d9c0d1dc0fbfbc2a1e00138e7f3ab85bc239358fe9b78aa2ab586d/sniffio-1.1.0-py3-none-any.whl", hash = "sha256:20ed6d5b46f8ae136d00b9dcb807615d83ed82ceea6b2058cecb696765246da5"},
-    {url = "https://files.pythonhosted.org/packages/ad/e5/63342a59850c6d285af0df92c86a778e1753235d6d392b9ae184217af852/sniffio-1.1.0.tar.gz", hash = "sha256:8e3810100f69fe0edd463d02ad407112542a11ffdc29f67db2bf3771afb87a21"},
     {url = "https://files.pythonhosted.org/packages/52/b0/7b2e028b63d092804b6794595871f936aafa5e9322dcaaad50ebf67445b3/sniffio-1.2.0-py3-none-any.whl", hash = "sha256:471b71698eac1c2112a40ce2752bb2f4a4814c22a54a3eed3676bc0f5ca9f663"},
     {url = "https://files.pythonhosted.org/packages/a6/ae/44ed7978bcb1f6337a3e2bef19c941de750d73243fc9389140d62853b686/sniffio-1.2.0.tar.gz", hash = "sha256:c4666eecec1d3f50960c6bdf61ab7bc350648da6c126e3cf6898d8cd4ddcd3de"},
 ]
@@ -1252,9 +1248,9 @@ content_hash = "sha256:5134b2d53e1172b65e4e0e30270c0d92174cbf871f4ac37fa4e81bc44
     {url = "https://files.pythonhosted.org/packages/b8/5a/7c8edcbb253fe99181daae892cc69077dc8d457c7fcb64c136a3efea6ab5/types-pytz-2022.1.1.tar.gz", hash = "sha256:4e7add70886dc2ee6ee7535c8184a26eeb0ac9dbafae9962cb882d74b9f67330"},
     {url = "https://files.pythonhosted.org/packages/9c/fc/1cdb8c656b35557ceb1b1a347f01229f02e0a333cd3eea23f2ec6840a4fd/types_pytz-2022.1.1-py3-none-any.whl", hash = "sha256:581467742f32f15fff1098698b11fd511057a2a8a7568d33b604083f2b03c24f"},
 ]
-"types-requests 2.28.1" = [
-    {url = "https://files.pythonhosted.org/packages/77/9e/19df5d6a6a646f7c7d8b8564664a36d777c905dd88a0c9a6521b868ec9b4/types-requests-2.28.1.tar.gz", hash = "sha256:acd8ed78509d27bdf04cddcc05f7066dfde4d30dd7dba67b808cdb1141d62ffe"},
-    {url = "https://files.pythonhosted.org/packages/e5/63/aff77442bca75c76ff35aa2a2a6f2daef5852e49a84379457022b764fb46/types_requests-2.28.1-py3-none-any.whl", hash = "sha256:b097692e124001f0ed5e4490245bb090f5e8e929819972f9ace84f9c3e146e8c"},
+"types-requests 2.28.2" = [
+    {url = "https://files.pythonhosted.org/packages/f0/16/b5df624c99f856b1671de918afa4737af3e5e623652fdf2a5b95aa3130fa/types-requests-2.28.2.tar.gz", hash = "sha256:398f88cd9302c796cb63d1021af2a1fb7ae507741a3d508edf8e0746d8c16a04"},
+    {url = "https://files.pythonhosted.org/packages/e7/14/4738ef0ba1f537b92fc5eefb14bd3e0a5a5456e16ae71f0c305dda9efcba/types_requests-2.28.2-py3-none-any.whl", hash = "sha256:c164696bfdce0123901165c5f097a6cc4f6326268c65815d4b6a57eacfec5e81"},
 ]
 "types-setuptools 63.2.0" = [
     {url = "https://files.pythonhosted.org/packages/58/98/669c6f7069f19c1a4d940926dc66ca840a28bf969e52cfbc5dd239a53a19/types-setuptools-63.2.0.tar.gz", hash = "sha256:fc9a6c4776a398d0f57b259ca893748342174c52a35d593d08b56f52aa99c1a4"},
